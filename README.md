@@ -124,7 +124,7 @@ Handy URL flags: `?seed=123` (replay a deal), `?fast=1`, `?autostart=1`, `?autop
 
 ## Under the hood
 
-Vanilla ES modules, no framework, no build step for development. About 6,000 lines including tests.
+Vanilla ES modules, no framework, no build step for development. About 7,000 lines including tests.
 
 ```
 src/engine/   pure rules: cards, seeded RNG, dealing, bidding, trick play, scoring, per-seat views
