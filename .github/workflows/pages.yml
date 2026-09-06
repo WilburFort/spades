@@ -27,6 +27,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Enable GitHub Pages (first run only; no-op afterwards)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Assemble the site
         run: |
           mkdir -p site
