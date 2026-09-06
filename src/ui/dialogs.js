@@ -21,7 +21,30 @@ function overlay(root, dialogCls, testid) {
   d.setAttribute('aria-modal', 'true');
   ov.appendChild(d);
   root.appendChild(ov);
-  return { ov, d, close: () => ov.remove() };
+  // Keep keyboard focus inside the dialog while it is open.
+  const previouslyFocused = document.activeElement;
+  ov.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const items = [...d.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !d.contains(document.activeElement))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (document.activeElement === last || !d.contains(document.activeElement))) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+  return {
+    ov,
+    d,
+    close: () => {
+      ov.remove();
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function' && document.contains(previouslyFocused)) previouslyFocused.focus({ preventScroll: true });
+    },
+  };
 }
 
 function trapEnter(ov, handler) {
@@ -250,6 +273,7 @@ export function showBidPanel(stage, o) {
   stage.appendChild(p);
   const onKey = (e) => {
     if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    if (document.querySelector('.overlay')) return; // a dialog is open on top of the panel
     if (/^[0-9]$/.test(e.key)) {
       const n = Number(e.key);
       if (n === 0 && o.canNil) o.onBid(NIL, false);
@@ -274,6 +298,8 @@ export function showBidPanel(stage, o) {
   return {
     close: () => {
       document.removeEventListener('keydown', onKey);
+      clearTimeout(pending);
+      pending = null;
       p.remove();
     },
   };
@@ -449,7 +475,7 @@ export function showGameOver(root, { state, names, stats }) {
 
 export function showSettings(root, { settings, onChange, onQuit }) {
   return new Promise((resolve) => {
-    const { d, close } = overlay(root, '', 'settings');
+    const { ov, d, close } = overlay(root, '', 'settings');
     d.innerHTML = '<h2>Settings</h2>';
     d.appendChild(field('Coach tips', 'Short prompts explaining what to do next', switchEl(settings.coach, (v) => onChange('coach', v), 'settings-coach')));
     d.appendChild(field('Table talk', 'Speech bubbles from the other players', switchEl(settings.tableTalk, (v) => onChange('tableTalk', v), 'settings-talk')));
@@ -471,6 +497,12 @@ export function showSettings(root, { settings, onChange, onQuit }) {
       close();
       onQuit();
       resolve('quit');
+    });
+    ov.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        close();
+        resolve('done');
+      }
     });
     setTimeout(() => done.focus({ preventScroll: true }), 0);
   });

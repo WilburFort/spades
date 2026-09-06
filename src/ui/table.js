@@ -209,7 +209,7 @@ export class Table {
       if (c) {
         name.innerHTML = `<span>${c.name}</span><span class="stars" title="${TIER_LABEL[c.tier]}">${'★'.repeat(c.stars)}</span>`;
       } else {
-        name.innerHTML = `<span>${escapeHtml(playerName)}</span><span class="you">(you · ${SEAT_NAMES[s]})</span>`;
+        name.innerHTML = `<span>${escapeHtml(playerName)}</span><span class="you">${playerName === 'You' ? SEAT_NAMES[s] : `you · ${SEAT_NAMES[s]}`}</span>`;
       }
     }
     this.$('[data-testid=team-us-label]').textContent = 'Us';
