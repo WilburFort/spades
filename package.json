@@ -1,0 +1,19 @@
+{
+  "name": "spades",
+  "version": "0.1.0",
+  "description": "A polished, single-player game of partnership Spades against three AI bots of varying skill.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test 'tests/unit/**/*.test.js'",
+    "sim": "node scripts/simulate.js",
+    "build": "node scripts/build.js",
+    "e2e": "node --test 'tests/e2e/**/*.test.js'"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "playwright": "^1.63.0"
+  }
+}
