@@ -28,6 +28,8 @@ export async function openGame(browser, url, { width = 1280, height = 800 } = {}
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
+    // Network-level failures (e.g. the optional web font behind a sandbox proxy) are environment noise, not game errors.
+    if (/net::ERR_/.test(m.text())) return;
     if (m.type() === 'error' || m.type() === 'warning') errors.push(`console.${m.type()}: ${m.text()}`);
   });
   await page.goto(url);
