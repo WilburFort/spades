@@ -1,94 +1,146 @@
-# Spades Night
+<p align="center">
+  <a href="https://wilburfort.github.io/spades/">
+    <img src="docs/screenshots/table.png" alt="Spades Night: a hand in progress. Your cards fanned at the bottom, three AI players around a green felt table, the winning card glowing gold." width="900">
+  </a>
+</p>
 
-**Play it here:** https://wilburfort.github.io/spades/
+<h1 align="center">♠ Spades Night</h1>
 
-A polished, single-player game of partnership **Spades** for the browser. You sit South with an AI partner across the table and face two AI opponents drawn from a roster of seven characters with three genuinely different skill levels. A quiet coach explains what to do next at the moments that matter, and switches off completely when you don't want it.
+<p align="center">
+  <b>Partnership Spades in your browser, against three AI players who actually think.</b><br>
+  A chatty rookie. A steady club player. A card-counting shark. And a coach that teaches, then gets out of the way.
+</p>
 
-No framework, no build step for development, no images, fonts or audio files: the whole game ships as one self-contained HTML file that works offline.
+<p align="center">
+  <a href="https://wilburfort.github.io/spades/"><img alt="Play online" src="https://img.shields.io/badge/%E2%96%B6%20Play%20now-online-1f6a52?style=for-the-badge"></a>
+  <a href="https://github.com/WilburFort/spades/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/WilburFort/spades/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Runtime dependencies: zero" src="https://img.shields.io/badge/runtime%20dependencies-0-5ad1b5">
+  <img alt="Ships as one HTML file" src="https://img.shields.io/badge/ships%20as-one%20HTML%20file-223760">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-ffd166"></a>
+</p>
 
-![The table mid-hand](docs/screenshots/table.png)
+<p align="center">
+  <a href="https://wilburfort.github.io/spades/">Play</a> ·
+  <a href="#run-it-yourself">Run it yourself</a> ·
+  <a href="#meet-the-table">Meet the table</a> ·
+  <a href="#how-the-bots-think">How the bots think</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a> ·
+  <a href="docs/TODO.md">Roadmap</a>
+</p>
 
-## Play
+---
 
-- **Online:** https://wilburfort.github.io/spades/
-- **Offline:** download `dist/spades.html` from the [latest CI run](../../actions) or run `npm run build`, then open the file in any modern browser.
-- **Development:** `npm install`, `npm start`, then visit <http://localhost:8080>.
+## Why you'll like it
 
-Pick a table in the lobby (Casual, Standard, Hard, or a custom lineup), press **Deal me in**, and bid.
+- **Opponents with real, different skill.** Not one bot with a difficulty slider. The rookies make the mistakes real beginners make (leading aces, trumping their own partner, bleeding bags). The solid players bid honestly and duck under a winning partner. The experts count every card, infer who's out of what, and simulate the rest of the hand hundreds of times before they play. Proven by simulation: solid beats rookie 100% of the time, expert beats solid 93%.
+- **A partner who behaves.** Your teammate never trumps your winning card, always tries to rescue your Nil, and never bids Nil on top of yours. Partnership etiquette is hard-coded; rollout noise can't override it.
+- **A coach that teaches, then leaves.** Short prompts at the moments that matter: your first bid, following suit, when spades break, when your partner is already winning, when the other team can be set. Each tip retires after a few showings. It suggests a bid, warns before a blunder, and offers a hint on demand. One click turns it off completely.
+- **Looks like a real table.** Cards drawn in CSS and SVG with proper pips and face cards, glass nameplates with parametric avatars, a gold glow on the winning card, a trick sweep to the winner, stamps for **SET!** and **NIL BUSTED**, table talk in speech bubbles, and a hand summary that counts up like a receipt.
+- **One file. No install. Works offline.** The entire game is a single HTML file with zero runtime dependencies. Download it, email it, put it on a USB stick; it plays anywhere.
+- **Built for people, keyboard included.** Arrow keys walk your playable cards, number keys bid, every dialog traps focus, illegal cards are dimmed and explain themselves, and a refresh resumes exactly where you were. Every deal has a number, so a hand you loved (or a bug you found) can be replayed with `?seed=N`.
 
-![Bidding with the coach's suggestion](docs/screenshots/bidding.png)
+## Meet the table
 
-### The table
+| | Character | Skill | How they play |
+|---|---|---|---|
+| 🌸 | **Rosie** | ★ Rookie | Warm and chatty. Plays by feel, underbids, apologizes when she trumps her partner. |
+| 🧢 | **Benny** | ★ Rookie | "I've got a good feeling about five!" Overbids, leads aces, loves to trump. |
+| 📒 | **Marcus** | ★★ Solid | Tidy club player. Honest bids, hates bags, ducks once the contract is in. |
+| 🎯 | **Dee** | ★★ Solid | Competitive league regular. Good instincts, a little chatty. |
+| 🕶️ | **Vega** | ★★★ Expert | Card shark. Counts every spade, sets your bids, hands you bags "on the house." |
+| 🎓 | **Prof. Okafor** | ★★★ Expert | Patient and precise. Generous with card-counting facts. |
+| 🌑 | **Sable** | ★★★ Expert | Says almost nothing. Misses almost nothing. |
 
-| Character | Skill | Style |
-|---|---|---|
-| Rosie | ★ Rookie | Warm and chatty. Underbids, collects bags. |
-| Benny | ★ Rookie | Impulsive. Overbids, leads aces, loves to trump. |
-| Marcus | ★★ Solid | Tidy club player. Honest bids, hates bags. |
-| Dee | ★★ Solid | Competitive league regular with good instincts. |
-| Vega | ★★★ Expert | Card shark. Counts every spade, sets bids, feeds you bags. |
-| Prof. Okafor | ★★★ Expert | Patient and precise. |
-| Sable | ★★★ Expert | Quiet and ruthless. |
+Three preset tables, or pick your own lineup:
 
-The **Standard** table (default) seats a rookie, a solid partner and one expert, so the three AI players really do vary in expertise. A competent player wins a little over half the time there; the Hard table wins about 40%.
+| Table | Partner | Opponents | For |
+|---|---|---|---|
+| **Casual** | Marcus ★★ | Rosie ★ · Benny ★ | Learning the game with a safety net |
+| **Standard** (default) | Marcus ★★ | Rosie ★ · Vega ★★★ | A mixed table: one soft spot, one shark. A competent player wins a little over half the time. |
+| **Hard** | Prof. Okafor ★★★ | Vega ★★★ · Sable ★★★ | The pro table. Wins here are earned (about 40% for a strong player). |
 
-### Rules
+## How the bots think
 
-Standard partnership Spades: 13 cards each, spades are always trump, follow suit if you can, spades can't be led until broken. Make your team's bid for 10 points per trick (plus 1 per overtrick, which is a *bag*); miss it for −10 per trick. Nil is ±100, blind nil ±200 (offered when 100+ behind). Ten bags cost 100. First team to 500 wins. House rules (target score, bag penalty, blind nil, failed-nil tricks, 10-for-200, lose at −200) are in the lobby.
+Every bot receives only what a human in that seat could know: its own hand plus the public table (`src/engine/view.js`). Cheating is structurally impossible.
 
-### Coach
+- **Rookie**: counts aces and kings, plays its highest card to win (even over its partner), trumps whenever it can, tosses random cards when it can't win.
+- **Solid**: protected-honour bidding, wins as cheaply as possible, ducks under a winning partner, covers a partner's Nil and squeezes an opponent's, stops taking tricks once the contract is safe.
+- **Expert**: everything Solid knows, plus card counting and void inference, then **Monte Carlo rollouts**. For every decision it imagines the unseen cards dealt to the other seats (consistent with every void and every bid it has observed), plays each candidate card out with the Solid policy for all four players, and picks the card with the best expected team score. It bids the same way, weighing each candidate bid, Nil included, by rollout. Fixed rollout counts keep a seeded game reproducible.
 
-Toggle with the lightbulb button, the **C** key, the lobby switch, or the *Turn off tips* link inside any prompt. When on, the coach suggests a bid, warns before a blunder bid, explains the rules the first few times they matter (following suit, breaking spades, nil, bags), nudges on strategy once per hand (partner already winning, covering a nil, setting the opponents), offers a **Hint** (**H**) for the current trick, and adds one line to each hand summary. Prompts retire after a few showings so it never nags. Turn indication, the status line and the "you must follow suit" feedback are game UI and always stay on.
+Measured with `npm run sim` over 30-game series at production settings: the expert pair beats the solid pair 28 times out of 30, makes 88% of its contracts, averages 0.6 bags per hand, and lands 25 of 28 Nils.
 
-![Hand summary with the trick review](docs/screenshots/hand-summary.png)
+## The coach
 
-### Keyboard
+<p align="center">
+  <img src="docs/screenshots/bidding.png" alt="The bid panel with the coach's suggested bid tagged, a speech bubble from each bot, and a coach prompt explaining what a bid is." width="820">
+</p>
 
-Number keys bid (**0** = Nil; **1** then **0–3** for 10–13). Arrow keys walk your playable cards and **Enter** plays the focused one. **H** hint, **C** coach, **M** mute, **?** rules, **Esc** closes dialogs. A click or key skips the pause after a trick.
+Toggle it with the lightbulb button, the **C** key, the lobby switch, or the *Turn off tips* link inside any prompt. When it's on: a suggested bid with a **Why?** that names your actual cards, a second-tap warning before a blunder bid, rule explanations the first few times they matter, strategy nudges at most once per hand, a **Hint** (**H**) for the current trick, a spade tracker, and one line of feedback on each hand summary. Turn indication, the status line and the "you must follow suit" feedback are game UI and never turn off.
 
-## How the AI works
+<p align="center">
+  <img src="docs/screenshots/hand-summary.png" alt="The hand summary: bids, tricks, contract, bags, nil, totals, a coach line, and a review of all 13 tricks labelled by player." width="820">
+</p>
 
-Bots see only their own hand and public information (`src/engine/view.js`), so cheating is structurally impossible.
+## Rules and house rules
 
-- **Rookie** counts aces and kings, plays its highest card to win (even over its partner), trumps whenever it can and throws random cards when it can't win.
-- **Solid** uses protected-honour bidding, ducks under a winning partner, wins as cheaply as possible, covers and defends nils and stops taking tricks once the contract is safe.
-- **Expert** adds card counting and void inference, then runs Monte Carlo rollouts: it repeatedly imagines the unseen cards dealt to the other seats (consistent with every void and bid it has observed), plays each candidate card out with the solid policy for everyone, and picks the card with the best expected team score. It bids the same way, evaluating each candidate bid (including nil) by rollout.
+Standard partnership Spades. 13 cards each; spades are always trump; follow suit if you can; spades can't be led until broken (unless spades are all you have). Make your team's bid for **10 points per trick** plus 1 per overtrick (a **bag**); miss it for **−10 per trick**. **Nil** is ±100, **Blind Nil** ±200 (offered when you're 100+ behind). Ten bags cost 100. First team to 500 wins.
 
-All tiers follow partnership etiquette that rollout noise must never override: never trump or overtake a partner's safe winning card, never win a trick while running your own nil if a losing card exists, always try to rescue a nil partner who is winning a trick, never bid a voluntary double nil.
+House rules in the lobby: target score (200 to 750), bag penalty on/off, blind nil, whether a busted Nil's tricks still help the partner, 10-for-200, and lose-at-−200.
 
-`npm run sim` pits the tiers against each other. In 30-game series with production settings, solid beats rookie in 100% of games and expert beats solid in 93% (making 88% of its contracts, 0.6 bags per hand, and 25 of 28 nils).
+## Keyboard
 
-## Testing
+| Key | Does |
+|---|---|
+| **1–9**, **0** | Bid (0 is Nil; **1** then **0–3** for 10–13) |
+| **← →** then **Enter** | Walk your playable cards and play the focused one |
+| **H** | Hint for this trick |
+| **C** | Coach tips on/off |
+| **M** | Mute |
+| **?** | Rules |
+| **Esc** | Close a dialog |
+| any click or key | Skip the pause after a trick |
+
+## Run it yourself
+
+**Just play:** open <https://wilburfort.github.io/spades/>, or grab `spades.html` from the [latest CI run](../../actions/workflows/ci.yml) and open it in any modern browser. No server, no install.
+
+**Develop:**
+
+```bash
+git clone https://github.com/WilburFort/spades.git
+cd spades
+npm install        # dev tools only: esbuild (build) and playwright (tests)
+npm start          # http://localhost:8080
+```
+
+```bash
+npm test           # 44 unit tests: rules, scoring branches, AI legality, etiquette
+npm run e2e        # 8 Playwright tests in real Chromium (first time: npx playwright install chromium)
+npm run sim        # bot-vs-bot skill comparison
+npm run build      # dist/spades.html, one self-contained file, zero network requests
+```
+
+Handy URL flags: `?seed=123` (replay a deal), `?fast=1`, `?autostart=1`, `?autoplay=1` (the human seat plays itself), `?coach=0`, `?talk=0`, `?sound=0`, `?preset=hard`, `?partner=dee&west=rosie&east=vega`, `?target=250`. Flags apply to that visit only. A debug API lives at `window.__spades` (`getState()`, `bid(n)`, `play('QS')`).
+
+## Under the hood
+
+Vanilla ES modules, no framework, no build step for development. About 6,000 lines including tests.
 
 ```
-npm test      # engine + AI unit tests (node --test)
-npm run e2e   # Playwright end-to-end tests in real Chromium (first time: npx playwright install chromium)
-npm run sim   # bot-vs-bot skill comparison
-npm run build # dist/spades.html (single self-contained file)
+src/engine/   pure rules: cards, seeded RNG, dealing, bidding, trick play, scoring, per-seat views
+src/ai/       the bots: analysis (card counting, voids), bidding, play policies, Monte Carlo, simulator
+src/app/      controller (the async game loop), coach copy and triggers, roster, settings/persistence
+src/ui/       table renderer and animations, dialogs, CSS/SVG cards, avatars, WebAudio sound
+tests/        node --test suites (unit + end-to-end)
+docs/         DESIGN.md (the spec), TODO.md (the roadmap), screenshots
 ```
-
-Continuous integration runs all of this on every push and pull request, and every push to `main` redeploys the game to GitHub Pages.
-
-Useful URL parameters for testing and sharing a deal: `?seed=123`, `?fast=1` (instant animations), `?autostart=1`, `?autoplay=1` (the human seat plays itself), `?coach=0`, `?talk=0`, `?sound=0`, `?preset=hard`, `?partner=dee&west=rosie&east=vega`, `?target=250`. Preference flags in a URL apply to that visit only and are never saved. A debug API is exposed as `window.__spades` (`getState()`, `bid(n)`, `play('QS')`).
 
 ## Contributing
 
-Issues and pull requests are very welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the map of the code and good first contributions, and [docs/TODO.md](docs/TODO.md) for the roadmap and known gaps. The design specification is in [docs/DESIGN.md](docs/DESIGN.md).
-
-## Layout
-
-```
-index.html            entry page (dev)
-src/engine/           rules: cards, RNG, dealing, bidding, trick play, scoring, views
-src/ai/               bots: analysis, bidding, play policies, Monte Carlo, simulation runner
-src/app/              controller (game loop), coach, roster, settings/persistence
-src/ui/               table renderer + animations, dialogs, cards, avatars, WebAudio sounds
-scripts/              serve.js, build.js, simulate.js, diagnose-nil.js
-tests/unit, tests/e2e node:test suites
-docs/                 DESIGN.md (spec), TODO.md (roadmap), screenshots
-.github/              CI, GitHub Pages deploy, issue and PR templates
-```
+Pull requests are very welcome, from a new character's one-liners to a smarter expert. Start with **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup, a map of the code and good first issues, and **[docs/TODO.md](docs/TODO.md)** for what's open. Found a bug? [Open an issue](../../issues/new/choose) with the deal number and we can replay the exact hand.
 
 ## License
 
 [MIT](LICENSE). Play it, fork it, ship it, teach with it.
+
+<p align="center"><sub>Made with a seeded deck and a lot of imagined hands.</sub></p>
