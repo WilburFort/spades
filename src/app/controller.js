@@ -4,7 +4,7 @@
 
 import {
   newGame, startHand, placeBid, playCard, legalPlays, playError, canBidBlindNil, currentWinner, PHASE, viewFor,
-  cardToPretty, cardToString, parseCard, suitOf, isSpade, SPADES, SUIT_NAMES, randomSeed, Rng, NIL, teamOf, partnerOf,
+  cardToPretty, cardToString, parseCard, suitOf, isSpade, SPADES, SUIT_NAMES, randomSeed, seedFrom, Rng, NIL, teamOf, partnerOf,
 } from '../engine/index.js';
 import { createBot, solidPlay } from '../ai/index.js';
 import { Table } from '../ui/table.js';
@@ -59,7 +59,7 @@ export class GameController {
       settings: this.settings,
       resume: saved,
       onPlay: () => {
-        saveSettings(this.settings);
+        this._saveSettings();
         this._applySettingsToUi();
         clearGame();
         this.lobby.close();
@@ -81,9 +81,10 @@ export class GameController {
     // A first-time player deals hand 1 (so they watch three bids first); afterwards the dealer is random.
     const firstEver = !this.settings.gamesPlayed;
     this.settings.gamesPlayed = (this.settings.gamesPlayed || 0) + 1;
-    saveSettings(this.settings);
+    this._saveSettings();
     this.skipBlindNil = false;
-    this.state = newGame({ seed, options: { ...this.settings.options }, firstDealer: firstEver ? 0 : null });
+    // The dealer comes from a separate stream so a shared "Deal #N" reproduces the same cards for everyone.
+    this.state = newGame({ seed, options: { ...this.settings.options }, firstDealer: firstEver ? 0 : seedFrom(`${seed}:dealer`) % 4 });
     this._setupPlayers(seed);
     this.table.setPhase('dealing');
     this.table.renderScoreboard(this.state);
@@ -95,6 +96,14 @@ export class GameController {
   }
 
   _resume(saved) {
+    const problem = validateSave(saved);
+    if (problem) {
+      console.warn('Discarding saved game:', problem);
+      clearGame();
+      this.table.toast('The saved game could not be restored, so it was discarded.', 3200);
+      this._showLobby(null);
+      return;
+    }
     this.state = saved.state;
     this.settings.lineup = saved.lineup;
     this.settings.playerName = saved.playerName || this.settings.playerName;
@@ -148,6 +157,7 @@ export class GameController {
       if (resuming && state.phase === PHASE.HAND_OVER) await this._handOverPhase(token);
       while (true) {
         this._check(token);
+        if (!Object.values(PHASE).includes(state.phase)) throw new Error(`Unknown game phase "${state.phase}"`);
         if (state.phase === PHASE.IDLE || state.phase === PHASE.HAND_OVER) {
           startHand(state);
           await this._dealPhase(token);
@@ -183,8 +193,9 @@ export class GameController {
     this.table.trackerEl.hidden = true;
     this.table.renderScoreboard(state);
     this.table.renderSeats(state);
-    this.table.setStatus(`Hand ${state.handNumber} — <span class="hl">${this._name(state.dealer)}</span> deals`);
+    this.table.setStatus(`Hand ${state.handNumber} — <span class="hl">${state.dealer === 0 ? 'You' : this._name(state.dealer)}</span> ${state.dealer === 0 ? 'deal' : 'deals'}`);
     this.sound.play('deal');
+    this._save(); // the new hand exists now; a refresh mid-deal must not bring back the old summary
     this.firstFollowShown = false;
     this.shownThisHand = new Set();
     this.pendingBroken = null;
@@ -247,9 +258,9 @@ export class GameController {
       this.table.renderSeats(state);
       this.table.renderScoreboard(state);
       this.sound.play('bid');
+      this._save(); // every bid is persisted, so a refresh never lets the bots re-bid
     }
     this._hideCoach();
-    this._save();
   }
 
   async _humanBid(token) {
@@ -305,7 +316,7 @@ export class GameController {
       }
       placeBid(state, seat, bid);
       const line = this._quipText(seat, bid === NIL ? 'nil' : 'bid', { n: bid });
-      this.table.showBubble(seat, line || (bid === NIL ? 'Nil.' : `<span class="bidnum">${bid}</span>`), 1700);
+      this.table.showBubble(seat, line || (bid === NIL ? 'Nil.' : `I'll take <span class="bidnum">${bid}</span>.`), 1700);
     }
   }
 
@@ -349,6 +360,7 @@ export class GameController {
       this.pendingBroken = null;
       this._coach('turn', extra, { legal, firstFollow: led !== null && !this.firstFollowShown });
       if (led !== null) this.firstFollowShown = true;
+      this.table.focusFirstLegal();
       // Nudge an idle newcomer toward the Hint button.
       clearTimeout(this.idleTimer);
       this.idleTimer = setTimeout(() => {
@@ -359,6 +371,11 @@ export class GameController {
     if (this.run.autoplay) {
       await this._delay(token, 120);
       card = this.autoBot.choosePlay(view);
+    } else if (state.hands[0].length === 1) {
+      // The last card plays itself after a short beat.
+      this.table.setStatus(`<span class="hl">Your turn</span> — your last card, ${Table.pretty(legal[0])}, plays itself`);
+      await this._delay(token, this.settings.speed === 'instant' ? 0 : 700);
+      card = legal[0];
     } else {
       card = await this._await('play', () => {});
     }
@@ -417,6 +434,7 @@ export class GameController {
     if (!won) {
       this.table.markWinning(currentWinner(state));
       this.table.setAnimating(false);
+      this._save(); // every play is persisted: a refresh cannot rewind the trick
       return;
     }
     // Trick complete: hold, glow, sweep.
@@ -425,7 +443,9 @@ export class GameController {
     const winnerName = won.winner === 0 ? 'You' : this._name(won.winner);
     this.table.setStatus(`<span class="hl">${winnerName}</span> ${won.winner === 0 ? 'win' : 'wins'} the trick with ${Table.pretty(won.plays.find((p) => p.seat === won.winner).card)}`);
     this.sound.play(teamOf(won.winner) === 0 ? 'trick-us' : 'trick-them');
-    await this._delaySkippable(token, this.table._dur('--dur-hold'));
+    // A person needs to see the finished trick even at Instant speed (a click or key still skips it).
+    const hold = this.run.autoplay ? this.table._dur('--dur-hold') : Math.max(this.table._dur('--dur-hold'), 600);
+    await this._delaySkippable(token, hold);
     this._check(token);
     await this.table.animateTrickSweep(won.winner);
     this._check(token);
@@ -523,6 +543,7 @@ export class GameController {
     await beat(300);
     this._check(token);
     this.table.renderScoreboard(state);
+    this.table.hideBubbles();
     await showHandSummary(this.table.stage, {
       summary,
       names: this.names,
@@ -546,13 +567,15 @@ export class GameController {
       rec[won ? 'won' : 'lost'] += 1;
       rec.nilsMade += state.history.reduce((n, h) => n + h.teams[0].nils.filter((x) => x.seat === 0 && x.made).length, 0);
       this.settings.record = rec;
-      saveSettings(this.settings);
+      this._saveSettings();
     }
     this.table.setStatus(won ? `<span class="hl">You win!</span> ${state.scores[0]} to ${state.scores[1]}` : `<span class="hl">${this._name(1)} & ${this._name(3)}</span> win ${state.scores[1]} to ${state.scores[0]}`);
     this.sound.play(won ? 'win' : 'lose');
     if (won) this.table.confetti();
     for (let s = 1; s < 4; s++) this._quip(s, teamOf(s) === state.winner ? 'win' : 'lose', {}, true);
     const stats = this._stats();
+    await this._delay(token, this.settings.speed === 'instant' ? 0 : 1600); // let the parting lines land before the dialog
+    this.table.hideBubbles();
     const choice = await showGameOver(this.table.stage, { state, names: this.names, stats });
     this._check(token);
     if (choice === 'again') this._newGame();
@@ -598,8 +621,9 @@ export class GameController {
       this.sound.play('error');
       const led = state.trick.length ? suitOf(state.trick[0].card) : null;
       const msg = err === 'spadesNotBroken' ? 'Spades aren’t broken yet — lead another suit' : err === 'mustFollowSuit' ? `You must follow suit: ${SUIT_NAMES[led]} ${SUIT_SYM[led]} were led` : err;
+      // One explanation, not two: the coach bubble when tips are on, the toast otherwise.
+      if (this.settings.coach && this._coach('illegal', { reason: err, card })) return;
       this.table.toast(msg, 1800);
-      this._coach('illegal', { reason: err, card });
       return;
     }
     const p = this.pending;
@@ -675,12 +699,12 @@ export class GameController {
     const limit = tipLimit(id);
     if (limit === Infinity && !forever) return;
     this.settings.seenTips[id] = forever ? Math.max(limit === Infinity ? 999 : limit, (this.settings.seenTips[id] || 0) + 1) : (this.settings.seenTips[id] || 0) + 1;
-    saveSettings(this.settings);
+    this._saveSettings();
   }
 
   _setCoach(on, announce) {
     this.settings.coach = on;
-    saveSettings(this.settings);
+    this._saveSettings();
     this._applySettingsToUi();
     if (!on) {
       this._hideCoach();
@@ -724,7 +748,7 @@ export class GameController {
     b.coach.addEventListener('click', () => this._setCoach(!this.settings.coach, true));
     b.sound.addEventListener('click', () => {
       this.settings.sound = !this.settings.sound;
-      saveSettings(this.settings);
+      this._saveSettings();
       this._applySettingsToUi();
       this.sound.play('click');
     });
@@ -739,7 +763,7 @@ export class GameController {
       settings: this.settings,
       onChange: (key, value) => {
         this.settings[key] = value;
-        saveSettings(this.settings);
+        this._saveSettings();
         this._applySettingsToUi();
         if (key === 'coach' && !value) {
           this._hideCoach();
@@ -760,6 +784,8 @@ export class GameController {
     document.addEventListener('keydown', (e) => {
       if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Shortcuts belong to the table: not while the lobby or a dialog with its own switches is open.
+      if (this.lobby || document.querySelector('.overlay')) return;
       const k = e.key.toLowerCase();
       if (k === 'h') this._hint();
       else if (k === 'c') this._setCoach(!this.settings.coach, true);
@@ -789,14 +815,20 @@ export class GameController {
       if (state && !this.settings.coach) this.table.toast('Turn on coach tips to get hints.', 1600);
       return;
     }
+    if (this.pending?.kind === 'blind') {
+      this.table.toast('No peeking — decide about Blind Nil first.', 1600);
+      return;
+    }
     if (state.phase === PHASE.PLAYING && state.turn === 0 && this.pending?.kind === 'play') {
       const view = viewFor(state, 0);
       view.names = this.names;
       const card = solidPlay(view, new Rng(1));
       this.table.setHint(card);
       this.table.showCoach({ id: 'hint', text: `Coach suggests <b>${cardToPretty(card)}</b>. ${explainHint(view, card)}` }, { onOff: () => this._setCoach(false, true) });
-    } else if (state.phase === PHASE.BIDDING && state.turn === 0) {
-      const s = suggestBid(state.hands[0], state.options);
+    } else if (state.phase === PHASE.BIDDING && state.turn === 0 && this.pending?.kind === 'bid') {
+      const view = viewFor(state, 0);
+      view.names = this.names;
+      const s = suggestBid(state.hands[0], state.options, view);
       this.table.showCoach({ id: 'hint', text: `Coach suggests bidding <b>${s.nil ? 'Nil' : s.bid}</b>.`, why: s.reasons.join('; ') + '.' }, { onOff: () => this._setCoach(false, true) });
     } else {
       this.table.toast('Hints are available on your turn.', 1400);
@@ -812,7 +844,10 @@ export class GameController {
     b.coach.classList.toggle('off', !s.coach);
     b.sound.classList.toggle('off', !s.sound);
     b.sound.innerHTML = s.sound ? this.table.constructor.name && iconSound(true) : iconSound(false);
-    b.hint.hidden = !s.coach;
+    // Keep the button in the layout so the toolbar does not jump when tips toggle.
+    b.hint.style.visibility = s.coach ? '' : 'hidden';
+    b.hint.setAttribute('aria-hidden', s.coach ? 'false' : 'true');
+    b.hint.tabIndex = s.coach ? 0 : -1;
     if (this.state) this.table.renderTracker(this.state, s.coach && this.state.phase === PHASE.PLAYING);
   }
 
@@ -864,8 +899,17 @@ export class GameController {
   }
 
   _save() {
-    if (!this.state || this.state.phase === PHASE.GAME_OVER) return;
+    if (!this.state) return;
+    if (this.state.phase === PHASE.GAME_OVER) {
+      clearGame(); // a decided game must not come back as "in progress"
+      return;
+    }
     saveGame({ state: this.state, lineup: { ...this.settings.lineup }, playerName: this.settings.playerName, blindIntent: this.blindIntent });
+  }
+
+  _saveSettings() {
+    if (this.run.noPersist) return; // URL test flags must not overwrite the player's real preferences
+    saveSettings(this.settings);
   }
 
   _exposeDebugApi() {
@@ -917,6 +961,29 @@ export class GameController {
       },
       settings: self.settings,
     };
+  }
+}
+
+/** Sanity-check a saved game before resuming it. Returns a problem description or null. */
+export function validateSave(saved) {
+  try {
+    const s = saved?.state;
+    if (!s || typeof s !== 'object') return 'no state';
+    if (!Object.values(PHASE).includes(s.phase) || s.phase === PHASE.IDLE) return `bad phase ${s.phase}`;
+    if (!saved.lineup || !['partner', 'west', 'east'].every((k) => typeof saved.lineup[k] === 'string')) return 'bad lineup';
+    for (const k of ['partner', 'west', 'east']) if (!lineupBySeat({ ...saved.lineup })[k === 'partner' ? 2 : k === 'west' ? 1 : 3]) return `unknown bot ${saved.lineup[k]}`;
+    if (!Array.isArray(s.hands) || s.hands.length !== 4 || !s.hands.every(Array.isArray)) return 'bad hands';
+    for (const key of ['bids', 'blind', 'tricksWon', 'scores', 'bags']) if (!Array.isArray(s[key])) return `bad ${key}`;
+    if (s.bids.length !== 4 || s.tricksWon.length !== 4 || s.scores.length !== 2) return 'bad array lengths';
+    if (!Array.isArray(s.tricks) || !Array.isArray(s.trick)) return 'bad tricks';
+    const all = [...s.hands.flat(), ...s.trick.map((p) => p.card), ...s.tricks.flatMap((t) => t.plays.map((p) => p.card))];
+    if (all.length !== 52 || new Set(all).size !== 52 || all.some((c) => !Number.isInteger(c) || c < 0 || c > 51)) return 'cards do not form a deck';
+    if (s.phase === PHASE.PLAYING && (!Number.isInteger(s.turn) || s.turn < 0 || s.turn > 3)) return 'bad turn';
+    if (s.phase === PHASE.BIDDING && (!Number.isInteger(s.turn) || s.bids[s.turn] !== null)) return 'bad bidding turn';
+    if (!s.options || typeof s.options !== 'object') return 'bad options';
+    return null;
+  } catch (err) {
+    return `unreadable (${err.message})`;
   }
 }
 

@@ -61,7 +61,13 @@ test('the human bids with the keyboard, illegal cards are refused with feedback,
   await page.waitForTimeout(150);
   const s2 = await state(page);
   assert.equal(s2.hands[0].length, s.hands[0].length, 'illegal click does not play');
-  assert.ok(await page.$eval('[data-testid=toast]', (el) => el.classList.contains('show')), 'toast explains the rule');
+  // One explanation: the coach bubble when tips are on, otherwise the toast.
+  const explained = await page.evaluate(() => {
+    const coach = document.querySelector('[data-testid=coach]');
+    const toast = document.querySelector('[data-testid=toast]');
+    return (coach.classList.contains('show') && /follow suit|broken/.test(coach.textContent)) || toast.classList.contains('show');
+  });
+  assert.ok(explained, 'the rule is explained');
   // Legal card plays
   await clickCard(page, s.legal[0]);
   await page.waitForFunction((n) => globalThis.__spades.getState().hands[0].length === n - 1, s.hands[0].length, { timeout: 5000 });
@@ -93,13 +99,14 @@ test('a risky bid asks for a second tap when the coach is on, and never when it 
 });
 
 test('coach prompts appear, can be turned off from the bubble, and stay off after reload', async () => {
-  const { page, context } = await openGame(browser, url('autostart=1&fast=1&seed=11&talk=0&sound=0&coach=1'));
-  await waitForHuman(page, 'bid');
+  // No preference flags in the URL: those are run-only and deliberately never persisted.
+  const { page, context } = await openGame(browser, url('autostart=1&seed=11'));
+  await waitForHuman(page, 'bid', { timeout: 30000 });
   assert.ok(await page.$eval('[data-testid=coach]', (el) => el.classList.contains('show')), 'coach shows a bid prompt');
   assert.ok(await page.$('[data-testid=bidpanel] .bidbtn.suggest'), 'suggested bid is tagged');
   await page.click('[data-testid=coach-off]');
   assert.equal(await page.$eval('[data-testid=coach]', (el) => el.classList.contains('show')), false);
-  assert.equal(await page.$eval('[data-testid=btn-hint]', (el) => el.hidden), true, 'hint button hides when coach is off');
+  assert.equal(await page.$eval('[data-testid=btn-hint]', (el) => getComputedStyle(el).visibility), 'hidden', 'hint button hides when coach is off');
   // Persisted: reload without URL override
   await page.goto(`${server.url}/`);
   await page.waitForSelector('[data-testid=lobby]');

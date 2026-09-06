@@ -4,7 +4,7 @@ import { avatarSvg, humanAvatarSvg } from './avatars.js';
 import { ROSTER, ROSTER_BY_ID, PRESETS, TIER_LABEL } from '../app/roster.js';
 import { NIL } from '../engine/scoring.js';
 import { cardToPretty, suitOf, HEARTS, DIAMONDS } from '../engine/cards.js';
-import { escapeHtml } from './table.js';
+import { escapeHtml, ICONS } from './table.js';
 
 function el(tag, cls, html) {
   const e = document.createElement(tag);
@@ -47,13 +47,43 @@ function overlay(root, dialogCls, testid) {
   };
 }
 
-function trapEnter(ov, handler) {
+/** Enter continues, unless focus is on a control that has its own Enter behaviour (a disclosure, a link, another button). */
+function trapEnter(ov, handler, primary) {
   ov.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handler();
-    }
+    if (e.key !== 'Enter') return;
+    const a = document.activeElement;
+    if (a && a !== primary && ['SUMMARY', 'A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName)) return;
+    e.preventDefault();
+    handler();
   });
+}
+
+/** Escape (anywhere on the page) or a click on the dimmed backdrop closes the dialog. */
+function dismissable(ov, done) {
+  const onKey = (e) => {
+    if (e.key === 'Escape') finish();
+  };
+  const onClick = (e) => {
+    if (e.target === ov) finish();
+  };
+  const finish = () => {
+    document.removeEventListener('keydown', onKey, true);
+    ov.removeEventListener('click', onClick);
+    done();
+  };
+  document.addEventListener('keydown', onKey, true);
+  ov.addEventListener('click', onClick);
+  return finish;
+}
+
+/** Only one instance of a given dialog at a time; returns true if one is already open (and focuses it). */
+function alreadyOpen(root, testid) {
+  const existing = root.querySelector(`[data-testid="${testid}"] .dialog`);
+  if (existing) {
+    existing.querySelector('button')?.focus({ preventScroll: true });
+    return true;
+  }
+  return false;
 }
 
 function switchEl(checked, onChange, testid) {
@@ -202,7 +232,7 @@ export function showLobby(root, { settings, resume, onPlay, onResume, onRules })
   right.appendChild(field('Your name', '', name));
   const more = el('details');
   more.innerHTML = '<summary style="cursor:pointer;color:var(--muted);padding:8px 0">House rules</summary>';
-  const moreBody = el('div');
+  const moreBody = el('div', 'house');
   moreBody.appendChild(field('Blind nil', 'Bid nil before looking when 100+ behind (±200)', switchEl(settings.options.allowBlindNil, (v) => (settings.options.allowBlindNil = v))));
   moreBody.appendChild(field('Bag penalty', 'Every 10 overtricks costs 100 points', switchEl(settings.options.bagPenaltyAt > 0, (v) => (settings.options.bagPenaltyAt = v ? 10 : 0))));
   moreBody.appendChild(field('Failed nil helps partner', 'A busted nil bidder’s tricks still count toward the team bid', switchEl(settings.options.nilTricksHelpPartner, (v) => (settings.options.nilTricksHelpPartner = v))));
@@ -270,14 +300,7 @@ export function showBidPanel(stage, o) {
     foot.after(warnEl);
     confirm.focus({ preventScroll: true });
   };
-  for (let n = 1; n <= 13; n++) {
-    const b = el('button', 'bidbtn', String(n));
-    b.type = 'button';
-    b.dataset.testid = `bid-${n}`;
-    if (o.coachOn && o.suggest === n) b.classList.add('suggest');
-    b.addEventListener('click', () => choose(n));
-    grid.appendChild(b);
-  }
+  // Two tidy rows of seven: NIL leads the first row (it is a bid of zero), then 1–13.
   if (o.canNil) {
     const nil = el('button', 'bidbtn nil', 'NIL');
     nil.type = 'button';
@@ -286,6 +309,16 @@ export function showBidPanel(stage, o) {
     if (o.coachOn && o.suggest === NIL) nil.classList.add('suggest');
     nil.addEventListener('click', () => choose(NIL));
     grid.appendChild(nil);
+  } else {
+    grid.appendChild(el('span'));
+  }
+  for (let n = 1; n <= 13; n++) {
+    const b = el('button', 'bidbtn', String(n));
+    b.type = 'button';
+    b.dataset.testid = `bid-${n}`;
+    if (o.coachOn && o.suggest === n) b.classList.add('suggest');
+    b.addEventListener('click', () => choose(n));
+    grid.appendChild(b);
   }
   p.appendChild(grid);
   const foot = el('div', 'foot', o.footer || (o.canNil ? 'Nil: +100 for zero tricks, −100 if you win any. Number keys also work (0 = Nil).' : 'Number keys also work.'));
@@ -361,7 +394,7 @@ export function showBlindNilPanel(stage, { deficit, onBlind, onLook, onSkip }) {
 // ---------------------------------------------------------------- hand summary
 
 function signed(n) {
-  return n > 0 ? `+${n}` : String(n);
+  return n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0';
 }
 function cls(n) {
   return n > 0 ? 'pos' : n < 0 ? 'neg' : '';
@@ -386,7 +419,7 @@ export function showHandSummary(root, { summary, names, options, tricks, gameOve
     const bagsText = (t) => {
       const r = teams[t];
       const meter = `<span class="bagmeter">${Array.from({ length: options.bagPenaltyAt || 0 }, (_, i) => `<i class="${i < r.bagsAfter ? 'on' : ''}"></i>`).join('')}</span>`;
-      return `${r.bagsAdded ? `+${r.bagsAdded} (${signed(r.bagsAdded)} pt${r.bagsAdded === 1 ? '' : 's'})` : '0'}${options.bagPenaltyAt ? meter : ''}${r.bagPenalty ? ` <span class="tag set">${r.bagPenalty} BAGGED</span>` : ''}`;
+      return `${r.bagsAdded ? `${r.bagsAdded} bag${r.bagsAdded === 1 ? '' : 's'} (+${r.bagsAdded})` : 'none'}${options.bagPenaltyAt ? meter : ''}${r.bagPenalty ? ` <span class="tag set">${signed(r.bagPenalty)} BAGGED</span>` : ''}`;
     };
     const nilText = (t) => {
       const r = teams[t];
@@ -412,9 +445,9 @@ export function showHandSummary(root, { summary, names, options, tricks, gameOve
     if (coachLine) {
       const c = el('div', 'coachline');
       c.dataset.testid = 'summary-coach';
-      c.innerHTML = `<span class="bulb">💡</span><span>${coachLine}</span>`;
+      c.innerHTML = `${ICONS.bulb.replace('<svg', '<svg class="bulb"')}<span>${coachLine}</span>`;
       c.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px;padding:10px 12px;border-radius:10px;background:rgba(255,209,102,0.1);border:1px solid rgba(255,209,102,0.3);font-size:13.5px;line-height:1.35';
-      c.querySelector('.bulb').style.cssText = 'font-size:14px;line-height:1.3';
+      c.querySelector('.bulb').style.cssText = 'width:18px;height:18px;flex:none;fill:none;stroke:var(--gold);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;margin-top:1px';
       d.appendChild(c);
     }
     const explain = el('p', 'muted');
@@ -466,7 +499,7 @@ export function showHandSummary(root, { summary, names, options, tricks, gameOve
       resolve();
     };
     btn.addEventListener('click', done);
-    trapEnter(ov, done);
+    trapEnter(ov, done, btn);
     setTimeout(() => btn.focus({ preventScroll: true }), 0);
   });
 }
@@ -490,7 +523,7 @@ export function showGameOver(root, { state, names, stats }) {
       <p style="text-align:center" class="muted">Final score <b style="color:var(--us)">${state.scores[0]}</b> to <b style="color:var(--them)">${state.scores[1]}</b> after ${state.handNumber} hand${state.handNumber === 1 ? '' : 's'}. <span title="Add ?seed=${state.seed} to the address to replay this deal">Deal #${state.seed}</span></p>
       <div class="statgrid">
         <div class="stat"><b>${stats.contractsMade}/${stats.contracts}</b><small>your team's bids made</small></div>
-        <div class="stat"><b>${stats.nilsMade}/${stats.nils}</b><small>nils made (your team)</small></div>
+        ${stats.nils ? `<div class="stat"><b>${stats.nilsMade}/${stats.nils}</b><small>nils made (your team)</small></div>` : `<div class="stat"><b>${state.handNumber}</b><small>hands played</small></div>`}
         <div class="stat"><b>${stats.bags}</b><small>bags collected</small></div>
         <div class="stat"><b>${stats.sets}</b><small>times you set them</small></div>
         <div class="stat"><b>${stats.tricks}</b><small>tricks you won</small></div>
@@ -518,6 +551,7 @@ export function showGameOver(root, { state, names, stats }) {
 // ---------------------------------------------------------------- settings (in game)
 
 export function showSettings(root, { settings, onChange, onQuit }) {
+  if (alreadyOpen(root, 'settings')) return Promise.resolve('done');
   return new Promise((resolve) => {
     const { ov, d, close } = overlay(root, '', 'settings');
     d.innerHTML = '<h2>Settings</h2>';
@@ -533,20 +567,14 @@ export function showSettings(root, { settings, onChange, onQuit }) {
     done.dataset.testid = 'btn-settings-done';
     actions.append(quit, done);
     d.appendChild(actions);
-    done.addEventListener('click', () => {
+    const finish = dismissable(ov, () => {
       close();
       resolve('done');
     });
+    done.addEventListener('click', finish);
     quit.addEventListener('click', () => {
-      close();
+      finish();
       onQuit();
-      resolve('quit');
-    });
-    ov.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        close();
-        resolve('done');
-      }
     });
     setTimeout(() => done.focus({ preventScroll: true }), 0);
   });
@@ -555,6 +583,7 @@ export function showSettings(root, { settings, onChange, onQuit }) {
 // ---------------------------------------------------------------- rules
 
 export function showRules(root) {
+  if (alreadyOpen(root, 'rules')) return Promise.resolve();
   return new Promise((resolve) => {
     const { ov, d, close } = overlay(root, 'rules', 'rules');
     d.innerHTML = `
@@ -586,10 +615,9 @@ export function showRules(root) {
       close();
       resolve();
     };
-    ok.addEventListener('click', done);
-    ov.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' || e.key === 'Enter') done();
-    });
+    const finish = dismissable(ov, done);
+    ok.addEventListener('click', finish);
+    trapEnter(ov, finish, ok);
     setTimeout(() => ok.focus({ preventScroll: true }), 0);
   });
 }
@@ -597,6 +625,7 @@ export function showRules(root) {
 // ---------------------------------------------------------------- score history
 
 export function showScoreHistory(root, { history, names, scores }) {
+  if (alreadyOpen(root, 'score-history')) return Promise.resolve();
   return new Promise((resolve) => {
     const { ov, d, close } = overlay(root, '', 'score-history');
     const us = `${names[0]} & ${names[2]}`;
@@ -621,10 +650,9 @@ export function showScoreHistory(root, { history, names, scores }) {
       close();
       resolve();
     };
-    ok.addEventListener('click', done);
-    ov.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' || e.key === 'Enter') done();
-    });
+    const finish = dismissable(ov, done);
+    ok.addEventListener('click', finish);
+    trapEnter(ov, finish, ok);
     setTimeout(() => ok.focus({ preventScroll: true }), 0);
   });
 }

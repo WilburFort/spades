@@ -63,7 +63,7 @@ export const ROSTER = [
     avatar: { bg: '#2e8b57', skin: '#8d5a3b', hair: 'short', hairColor: '#1b1b1f', glasses: 'square', accent: '#e8e8e8', mustache: true },
     quips: {
       greeting: ['Good table. Let’s keep it tidy.'],
-      bid: ['{n}.', '{n}, nice and steady.', 'I can see {n}.'],
+      bid: ['I make it {n}.', '{n}, nice and steady.', 'I can see {n}.'],
       nil: ['Nil. I’ll stay out of the way.'],
       won: ['Noted.', 'That’s one.'],
       set: ['Hm. Off by one.', 'That’s on me.'],
@@ -111,7 +111,7 @@ export const ROSTER = [
     avatar: { bg: '#ff7a5c', skin: '#e0ac7c', hair: 'slick', hairColor: '#111', glasses: 'sun', accent: '#111' },
     quips: {
       greeting: ['Sit down. This won’t take long.'],
-      bid: ['{n}.', '{n}. Exactly.', 'Say {n}.'],
+      bid: ['Give me {n}.', '{n}. Exactly.', 'Say {n}.'],
       nil: ['Nil.'],
       won: [],
       set: ['Unusual.', 'Noted.'],
@@ -135,7 +135,7 @@ export const ROSTER = [
     avatar: { bg: '#3a6ea5', skin: '#6b3f25', hair: 'bald', hairColor: '#e8e8e8', glasses: 'round', accent: '#ffd166', beard: true },
     quips: {
       greeting: ['A pleasure. Let’s think carefully.'],
-      bid: ['{n}, by my count.', 'The hand suggests {n}.', '{n}.'],
+      bid: ['{n}, by my count.', 'The hand suggests {n}.', 'I shall say {n}.'],
       nil: ['I shall attempt nil.'],
       won: ['As expected.'],
       set: ['An instructive hand.'],
@@ -159,7 +159,7 @@ export const ROSTER = [
     avatar: { bg: '#4a4e69', skin: '#f1d3b8', hair: 'long', hairColor: '#1b1b1f', smile: false },
     quips: {
       greeting: ['…'],
-      bid: ['{n}.'],
+      bid: ['Just {n}.', '{n}, then.'],
       nil: ['Nil.'],
       won: [],
       set: ['Hm.'],

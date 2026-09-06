@@ -117,6 +117,15 @@ export function applyUrlOverrides(settings, search = globalThis.location?.search
   if (p.has('autostart')) run.autostart = bool(p.get('autostart'));
   if (p.has('autoplay')) run.autoplay = bool(p.get('autoplay'));
   if (p.has('debug')) run.debug = bool(p.get('debug'));
+  // A URL lineup must not seat the same character twice.
+  const seen = new Set();
+  for (const k of ['partner', 'west', 'east']) {
+    if (seen.has(settings.lineup[k])) settings.lineup[k] = Object.values(ROSTER_BY_ID).find((b) => !seen.has(b.id) && !Object.values(settings.lineup).includes(b.id)).id;
+    seen.add(settings.lineup[k]);
+  }
+  // Overrides that change preferences are for this run only; never write them back to the player's profile.
+  const prefKeys = ['fast', 'speed', 'coach', 'talk', 'sound', 'preset', 'partner', 'west', 'east', 'target', 'bust', 'blindnil', 'nil', 'bags', 'nilhelp', 'ten200'];
+  run.noPersist = prefKeys.some((k) => p.has(k));
   return { settings, run };
 }
 

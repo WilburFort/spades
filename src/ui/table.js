@@ -184,6 +184,16 @@ export class Table {
     const x = (w - STAGE_W * s) / 2;
     const y = (h - STAGE_H * s) / 2;
     this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+    // A narrow portrait window shrinks the table to a postage stamp: say so instead of pretending.
+    const tooSmall = s < 0.45;
+    if (tooSmall && !this.rotateEl) {
+      this.rotateEl = el('div', 'rotate-notice', '<b>Spades Night</b> needs a wider window.<br>Turn your device sideways or widen the browser to play.');
+      this.rotateEl.dataset.testid = 'rotate-notice';
+      this.root.appendChild(this.rotateEl);
+    } else if (!tooSmall && this.rotateEl) {
+      this.rotateEl.remove();
+      this.rotateEl = null;
+    }
   }
 
   /** Stage-local rect of an element (design px). */
@@ -235,7 +245,7 @@ export class Table {
   renderScoreboard(state) {
     const opts = state.options;
     for (const [team, key] of [[0, 'us'], [1, 'them']]) {
-      this.$(`[data-testid=score-${key}]`).textContent = String(state.scores[team]);
+      this.$(`[data-testid=score-${key}]`).textContent = String(state.scores[team]).replace('-', '−');
       const bags = this.$(`[data-testid=bags-${key}]`);
       const at = opts.bagPenaltyAt || 0;
       bags.innerHTML = '';
@@ -415,7 +425,7 @@ export class Table {
       }
       const k = i - (n - 1) / 2;
       slot.style.left = `${k * step}px`;
-      slot.style.transform = `translateY(${k * k * 0.6}px) rotate(${k * 1.8}deg)`;
+      slot.style.transform = `translateY(${k * k * 0.45}px) rotate(${k * 1.6}deg)`;
       slot.style.zIndex = String(10 + i);
       const isLegal = legal ? legal.has(card) : false;
       slot.classList.toggle('legal', !!legal && isLegal);
@@ -450,12 +460,13 @@ export class Table {
     if (card !== null && card !== undefined) this.handSlots.get(card)?.classList.add('hint');
   }
 
+  /** Move keyboard focus into the hand (first legal card) unless a dialog or the hand already has it. */
   focusFirstLegal() {
-    for (const slot of this.handSlots.values()) {
-      if (slot.classList.contains('legal')) {
-        slot.firstChild.focus({ preventScroll: true });
-        return;
-      }
+    const active = document.activeElement;
+    if (active && (this.handEl.contains(active) || document.querySelector('.overlay'))) return;
+    for (const slot of this.handEl.querySelectorAll('.slot.legal .card')) {
+      slot.focus({ preventScroll: true });
+      return;
     }
   }
 
@@ -676,8 +687,10 @@ export class Table {
   floater(seat, text, color) {
     const f = el('div', 'floater', text);
     const pos = PLATE_CENTER[seat];
-    f.style.left = `${pos.x + (seat === 1 ? 90 : seat === 3 ? -120 : 90)}px`;
-    f.style.top = `${pos.y - 30}px`;
+    // Float up from above the nameplate, clear of fans, badges and bubbles.
+    const spot = seat === 2 ? { x: pos.x + 112, y: pos.y + 18 } : seat === 1 ? { x: pos.x - 10, y: pos.y - 60 } : seat === 3 ? { x: pos.x - 10, y: pos.y - 60 } : { x: pos.x - 10, y: pos.y - 64 };
+    f.style.left = `${spot.x}px`;
+    f.style.top = `${spot.y}px`;
     if (color) f.style.color = color;
     this.stage.appendChild(f);
     setTimeout(() => f.remove(), 1100);

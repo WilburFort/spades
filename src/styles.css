@@ -49,7 +49,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 
 #app {
   position: fixed; inset: 0; overflow: hidden;
-  background: radial-gradient(ellipse at 50% 35%, #123128 0%, var(--bg) 72%);
+  /* Same felt as the stage edges, so letterbox bands on odd aspect ratios blend into the table. */
+  background: radial-gradient(ellipse at 50% 50%, #164a3b 0%, var(--felt-2) 60%, #0b2e25 100%);
 }
 
 /* ------------------------------------------------------------------ stage */
@@ -71,7 +72,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
     repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0 1px, transparent 1px 3px);
 }
 .felt::after {
-  content: ''; position: absolute; left: 50%; top: 52%; width: 760px; height: 440px;
+  content: ''; position: absolute; left: 50%; top: 52%; width: 850px; height: 470px;
   transform: translate(-50%, -50%); border-radius: 50%;
   border: 1px solid rgba(255, 209, 102, 0.16);
   box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.18);
@@ -121,6 +122,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 .textbtn:hover { background: rgba(255,255,255,0.1); }
 .textbtn.primary { background: var(--gold); color: #1b1b1f; border-color: transparent; }
+.textbtn.primary:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--glass-2), 0 0 0 4px var(--gold); }
 .textbtn.primary:hover { background: #ffdc85; }
 .textbtn.ghost { background: transparent; }
 .textbtn:disabled { opacity: 0.5; cursor: default; }
@@ -151,7 +153,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .plate-name { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .plate-name .stars { color: var(--gold); font-size: 11px; letter-spacing: -1px; }
 .plate-name .you { font-size: 11px; color: var(--muted); font-weight: 600; }
-.plate-chip { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.plate-chip { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .plate-chip b { color: var(--text); font-weight: 700; }
 .plate-chip .nil { color: var(--gold); font-weight: 800; letter-spacing: 0.04em; }
 .plate-chip .nil.busted { color: var(--bad); text-decoration: line-through; }
@@ -172,7 +174,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 /* spade tracker */
 .tracker {
   position: absolute; left: 14px; top: 70px; z-index: 3; display: flex; gap: 2px; align-items: center; padding: 5px 9px 5px 8px;
-  background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px; font-size: 11.5px; font-weight: 700; color: var(--text);
+  background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px; font-size: 12.5px; font-weight: 700; color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .tracker .sp { color: var(--gold); margin-right: 4px; font-size: 13px; }
@@ -228,19 +230,20 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 .card.red { color: var(--red); }
 .card .corner { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.card .corner.tl { top: calc(var(--card-w) * 0.06); left: calc(var(--card-w) * 0.07); }
-.card .corner.br { bottom: calc(var(--card-w) * 0.06); right: calc(var(--card-w) * 0.07); transform: rotate(180deg); }
-.card .corner .rank { font-weight: 800; font-size: calc(var(--card-w) * 0.23); letter-spacing: -0.03em; }
-.card .corner .rank.ten { letter-spacing: -0.04em; font-size: calc(var(--card-w) * 0.2); }
-.card .corner .suit { width: calc(var(--card-w) * 0.19); height: calc(var(--card-w) * 0.19); margin-top: 1px; }
+.card .corner.tl { top: calc(var(--card-w) * 0.045); left: calc(var(--card-w) * 0.055); }
+.card .corner.br { bottom: calc(var(--card-w) * 0.045); right: calc(var(--card-w) * 0.055); transform: rotate(180deg); }
+.card .corner .rank { font-weight: 800; font-size: calc(var(--card-w) * 0.2); letter-spacing: -0.03em; }
+.card .corner .rank.ten { letter-spacing: -0.07em; font-size: calc(var(--card-w) * 0.18); }
+.card .corner .suit { width: calc(var(--card-w) * 0.15); height: calc(var(--card-w) * 0.15); margin-top: 1px; }
 .card .suit { fill: currentColor; display: block; }
-.card .pips { position: absolute; left: calc(var(--card-w) * 0.22); right: calc(var(--card-w) * 0.22); top: calc(var(--card-h) * 0.1); bottom: calc(var(--card-h) * 0.1); }
-.card .pips .suit { position: absolute; width: calc(var(--card-w) * 0.21); height: calc(var(--card-w) * 0.21); transform: translate(-50%, -50%); }
+/* Pip columns sit inside the corner indices (31% / 50% / 69% of the width), as on a real deck. */
+.card .pips { position: absolute; left: calc(var(--card-w) * 0.31); right: calc(var(--card-w) * 0.31); top: calc(var(--card-h) * 0.16); bottom: calc(var(--card-h) * 0.16); }
+.card .pips .suit { position: absolute; width: calc(var(--card-w) * 0.19); height: calc(var(--card-w) * 0.19); transform: translate(-50%, -50%); }
 .card .pips .suit.flip { transform: translate(-50%, -50%) rotate(180deg); }
 .card .ace { position: absolute; left: 50%; top: 50%; width: calc(var(--card-w) * 0.5); height: calc(var(--card-w) * 0.5); transform: translate(-50%, -50%); }
 .card.spade-ace .ace { width: calc(var(--card-w) * 0.6); height: calc(var(--card-w) * 0.6); filter: drop-shadow(0 1px 0 rgba(0,0,0,0.25)); }
 .card .face {
-  position: absolute; left: calc(var(--card-w) * 0.2); right: calc(var(--card-w) * 0.2); top: calc(var(--card-h) * 0.17); bottom: calc(var(--card-h) * 0.17);
+  position: absolute; left: calc(var(--card-w) * 0.22); right: calc(var(--card-w) * 0.22); top: calc(var(--card-h) * 0.19); bottom: calc(var(--card-h) * 0.19);
   border: 1.5px solid currentColor; border-radius: 4px; display: grid; place-items: center;
   background: linear-gradient(160deg, rgba(255,255,255,0) 0%, rgba(0,0,0,0.05) 100%);
 }
@@ -274,11 +277,11 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .flying .card { --card-w: 84px; --card-h: 118px; }
 
 /* ------------------------------------------------------------------ hand */
-.hand { position: absolute; left: 640px; top: 640px; width: 0; height: 0; z-index: 6; }
+.hand { position: absolute; left: 640px; top: 628px; width: 0; height: 0; z-index: 6; }
 .hand .slot { position: absolute; left: 0; top: 0; transform-origin: 0 var(--card-h); transition: transform var(--dur-play) ease, left var(--dur-play) ease; }
 .hand .slot .card { margin-left: calc(var(--card-w) * -0.5); transition: transform 150ms ease, box-shadow 150ms ease, opacity 200ms, filter 200ms; cursor: default; }
 .hand .slot.legal .card { cursor: pointer; }
-.hand .slot.legal:hover .card, .hand .slot.legal.focus .card { transform: translateY(-26px); box-shadow: 0 0 0 2px var(--gold), 0 14px 26px rgba(0,0,0,0.4); }
+.hand .slot.legal:hover .card, .hand .slot.legal .card:focus-visible { transform: translateY(-26px); box-shadow: 0 0 0 2px var(--gold), 0 14px 26px rgba(0,0,0,0.4); outline: none; }
 .hand .slot.illegal .card { opacity: 0.5; filter: saturate(0.5) brightness(0.9); cursor: not-allowed; }
 .hand .slot.hint .card { box-shadow: 0 0 0 2px var(--gold), 0 0 22px var(--gold-soft); animation: hint-lift 1.2s ease-in-out infinite alternate; }
 @keyframes hint-lift { from { transform: translateY(-4px); } to { transform: translateY(-14px); } }
@@ -291,15 +294,15 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 
 /* ------------------------------------------------------------------ coach + status toast */
 .coach {
-  position: absolute; left: 50%; bottom: 170px; transform: translateX(-50%); z-index: 7; max-width: 760px; min-width: 300px;
-  display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px 10px 12px;
-  background: #fff8e6; color: #2b2a26; border-radius: 14px; box-shadow: 0 8px 26px rgba(0,0,0,0.4);
-  border-left: 5px solid var(--gold); opacity: 0; translate: 0 6px; transition: opacity var(--dur-ui), translate var(--dur-ui);
+  position: absolute; left: 50%; bottom: 182px; transform: translateX(-50%); z-index: 7; max-width: 620px; min-width: 280px;
+  display: flex; gap: 9px; align-items: flex-start; padding: 8px 12px 8px 11px;
+  background: #f6efdc; color: #2b2a26; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  border-left: 3px solid var(--gold); opacity: 0; translate: 0 6px; transition: opacity var(--dur-ui), translate var(--dur-ui);
   pointer-events: none;
 }
 .coach.show { opacity: 1; translate: 0 0; pointer-events: auto; }
-.coach .bulb { width: 22px; height: 22px; flex: none; margin-top: 1px; fill: none; stroke: #8a5a00; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.coach .text { font-size: 14.5px; line-height: 1.38; }
+.coach .bulb { width: 20px; height: 20px; flex: none; margin-top: 1px; fill: none; stroke: #8a5a00; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.coach .text { font-size: 13.5px; line-height: 1.36; }
 .coach .text b { font-weight: 700; }
 .coach .why { margin-top: 4px; font-size: 13px; color: #5b4a1e; }
 .coach .why-link, .coach .off-link { background: none; border: 0; padding: 0; color: #8a5a00; font-weight: 600; font-size: 13px; text-decoration: underline; cursor: pointer; }
@@ -331,7 +334,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .bidbtn:hover { background: rgba(255,255,255,0.14); transform: translateY(-1px); }
 .bidbtn.suggest { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
 .bidbtn.suggest::after { content: 'tip'; position: absolute; top: -9px; right: -6px; font-size: 10px; font-weight: 800; letter-spacing: 0.04em; background: var(--gold); color: #1b1b1f; padding: 1px 6px; border-radius: 8px; }
-.bidbtn.nil { grid-column: span 2; background: rgba(255, 209, 102, 0.12); border-color: rgba(255, 209, 102, 0.45); color: var(--gold); letter-spacing: 0.06em; }
+.bidbtn.nil { background: rgba(255, 209, 102, 0.12); border-color: rgba(255, 209, 102, 0.45); color: var(--gold); letter-spacing: 0.06em; font-size: 15px; }
 .bidbtn.blind { grid-column: span 2; background: rgba(255, 92, 114, 0.12); border-color: rgba(255, 92, 114, 0.45); color: #ffb3bf; font-size: 15px; }
 .bidbtn.look { grid-column: span 3; font-size: 15px; }
 .bidpanel .foot { color: var(--muted); font-size: 12.5px; min-height: 18px; }
@@ -375,7 +378,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .dialog p { margin: 6px 0; color: var(--text); }
 .dialog .muted { color: var(--muted); }
 .dialog .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.dialog .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.dialog .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; position: sticky; bottom: -22px; padding: 12px 0 4px; background: linear-gradient(to bottom, transparent, var(--glass-2) 30%); }
 .dialog .actions.center { justify-content: center; }
 .dialog .textbtn { height: 44px; padding: 0 18px; }
 .dialog.wide { width: 760px; }
@@ -424,7 +427,10 @@ input.text { height: 36px; padding: 0 10px; border-radius: 8px; background: rgba
 .lobby .hero p { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
 .lobby .hero .textbtn.primary { height: 56px; padding: 0 30px; font-size: 20px; border-radius: 14px; box-shadow: 0 10px 28px rgba(255,209,102,0.25); }
 .lobby .cols { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 30px; }
-#app[data-phase='lobby'] .toolbar, #app[data-phase='lobby'] .scoreboard, #app[data-phase='lobby'] .seat, #app[data-phase='lobby'] .status, #app[data-phase='lobby'] .fan { visibility: hidden; }
+#app[data-phase='lobby'] .toolbar, #app[data-phase='lobby'] .scoreboard, #app[data-phase='lobby'] .seat, #app[data-phase='lobby'] .status, #app[data-phase='lobby'] .fan, #app[data-phase='lobby'] .brand span, #app[data-phase='lobby'] .brand small { visibility: hidden; }
+.lobby-card { max-height: 744px; overflow-y: auto; }
+.lobby .house { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+.lobby .house .field { padding: 7px 0; }
 .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
 .preset { text-align: left; padding: 12px 12px 10px; border-radius: 14px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04); transition: border-color var(--dur-ui), background var(--dur-ui); }
 .preset:hover { background: rgba(255,255,255,0.08); }
@@ -446,8 +452,15 @@ input.text { height: 36px; padding: 0 10px; border-radius: 8px; background: rgba
 .lobby .tiny { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
 .lobby kbd { font-family: inherit; background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 
+/* ------------------------------------------------------------------ too-small notice */
+.rotate-notice {
+  position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; text-align: center; padding: 24px;
+  background: var(--bg); color: var(--text); font-size: 16px; line-height: 1.5;
+}
+.rotate-notice b { font-family: var(--display); font-size: 22px; display: block; margin-bottom: 8px; }
+
 /* ------------------------------------------------------------------ confetti */
-.confetti-piece { position: absolute; top: -40px; z-index: 30; font-size: 24px; pointer-events: none; animation: confetti-fall linear both; }
+.confetti-piece { position: absolute; top: -40px; z-index: 19; font-size: 24px; pointer-events: none; animation: confetti-fall linear both; }
 @keyframes confetti-fall { to { transform: translateY(880px) rotate(720deg); opacity: 0.6; } }
 
 /* trophy */
@@ -465,7 +478,7 @@ input.text { height: 36px; padding: 0 10px; border-radius: 8px; background: rgba
 .rules p { font-size: 13px; }
 .dialog .textbtn.ghost, .lobby .textbtn.ghost { white-space: nowrap; }
 .rules li b { color: var(--gold); }
-.trick-review { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 18px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.trick-review { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 18px; font-size: 13px; font-variant-numeric: tabular-nums; max-height: 250px; overflow-y: auto; padding-right: 4px; }
 .trick-review .tr { display: flex; gap: 10px; align-items: flex-end; padding: 4px 0; border-bottom: 1px solid var(--glass-border); }
 .trick-review .n { color: var(--muted); width: 22px; padding-bottom: 2px; }
 .trick-review .pl { display: flex; flex-direction: column; align-items: center; min-width: 38px; }
