@@ -541,6 +541,13 @@ export class GameController {
     clearGame();
     this.table.setPhase(PHASE.GAME_OVER);
     const won = state.winner === 0;
+    if (!this.run.autoplay) {
+      const rec = this.settings.record || { won: 0, lost: 0, nilsMade: 0 };
+      rec[won ? 'won' : 'lost'] += 1;
+      rec.nilsMade += state.history.reduce((n, h) => n + h.teams[0].nils.filter((x) => x.seat === 0 && x.made).length, 0);
+      this.settings.record = rec;
+      saveSettings(this.settings);
+    }
     this.table.setStatus(won ? `<span class="hl">You win!</span> ${state.scores[0]} to ${state.scores[1]}` : `<span class="hl">${this._name(1)} & ${this._name(3)}</span> win ${state.scores[1]} to ${state.scores[0]}`);
     this.sound.play(won ? 'win' : 'lose');
     if (won) this.table.confetti();
@@ -758,6 +765,18 @@ export class GameController {
       else if (k === 'c') this._setCoach(!this.settings.coach, true);
       else if (k === 'm') this.table.buttons.sound.click();
       else if (e.key === '?') showRules(this.table.stage);
+      else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && this.pending?.kind === 'play' && !document.querySelector('.overlay')) {
+        // Arrow keys walk the playable cards; Enter plays the focused one.
+        e.preventDefault();
+        const legalSlots = [...this.table.handEl.querySelectorAll('.slot.legal .card')];
+        if (!legalSlots.length) return;
+        const i = legalSlots.indexOf(document.activeElement);
+        const next = i === -1 ? (e.key === 'ArrowRight' ? 0 : legalSlots.length - 1) : (i + (e.key === 'ArrowRight' ? 1 : legalSlots.length - 1)) % legalSlots.length;
+        legalSlots[next].focus({ preventScroll: true });
+      } else if (e.key === 'Escape' && !document.querySelector('.overlay')) {
+        this.table.hideLastTrick();
+        this.table.setHint(null);
+      }
     });
     const unlock = () => this.sound.unlock();
     document.addEventListener('pointerdown', unlock, { once: true });

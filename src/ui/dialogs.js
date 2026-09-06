@@ -107,7 +107,9 @@ export function showLobby(root, { settings, resume, onPlay, onResume, onRules })
   lob.appendChild(card);
 
   const hero = el('div', 'hero');
-  hero.innerHTML = `<div><h1><svg class="spade" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 6C30 32 8 44 8 62c0 12 9 21 21 21 8 0 14-4 18-10-2 12-7 18-15 23h36c-8-5-13-11-15-23 4 6 10 10 18 10 12 0 21-9 21-21C92 44 70 32 50 6z"/></svg>Spades Night</h1><p>Partnership Spades against three AI players. Pick a table and deal.</p></div>`;
+  const rec = settings.record;
+  const recordLine = rec && rec.won + rec.lost > 0 ? ` <span class="muted" data-testid="record">· Your record: ${rec.won} won, ${rec.lost} lost${rec.nilsMade ? `, ${rec.nilsMade} nil${rec.nilsMade === 1 ? '' : 's'} made` : ''}</span>` : '';
+  hero.innerHTML = `<div><h1><svg class="spade" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 6C30 32 8 44 8 62c0 12 9 21 21 21 8 0 14-4 18-10-2 12-7 18-15 23h36c-8-5-13-11-15-23 4 6 10 10 18 10 12 0 21-9 21-21C92 44 70 32 50 6z"/></svg>Spades Night</h1><p>Partnership Spades against three AI players. Pick a table and deal.${recordLine}</p></div>`;
   const play = el('button', 'textbtn primary', 'Deal me in');
   play.dataset.testid = 'btn-play';
   hero.appendChild(play);
