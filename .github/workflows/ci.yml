@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    name: Unit, end-to-end, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests (engine + AI)
+        run: npm test
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests (real browser)
+        run: npm run e2e
+
+      - name: Single-file build
+        run: npm run build
+
+      - name: Skill-tier sanity check
+        run: ROLLOUTS=12 BID_SAMPLES=10 node scripts/simulate.js 6 solid,rookie,solid,rookie
+
+      - name: Upload the playable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: spades-night
+          path: dist/spades.html

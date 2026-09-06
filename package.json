@@ -1,9 +1,21 @@
 {
-  "name": "spades",
-  "version": "0.1.0",
-  "description": "A polished, single-player game of partnership Spades against three AI bots of varying skill.",
+  "name": "spades-night",
+  "version": "1.0.0",
+  "description": "A polished, single-player game of partnership Spades against three AI bots of varying skill, with an optional coach.",
   "type": "module",
   "private": true,
+  "homepage": "https://wilburfort.github.io/spades/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WilburFort/spades.git"
+  },
+  "bugs": {
+    "url": "https://github.com/WilburFort/spades/issues"
+  },
+  "keywords": ["spades", "card-game", "game", "ai", "monte-carlo", "browser", "vanilla-js"],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node scripts/serve.js",
     "test": "node --test 'tests/unit/**/*.test.js'",

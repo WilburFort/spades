@@ -35,6 +35,7 @@ const out = html
 if (out.includes('src/main.js') || out.includes('src/styles.css') || out.includes('fonts.googleapis')) throw new Error('Build failed to inline assets');
 
 await fs.writeFile(path.join(dist, 'spades.html'), out);
+await fs.writeFile(path.join(dist, 'index.html'), out); // same file under the name static hosts expect
 const size = (Buffer.byteLength(out) / 1024).toFixed(0);
 console.log(`dist/spades.html written (${size} KB)`);
 
