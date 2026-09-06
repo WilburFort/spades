@@ -71,6 +71,27 @@ test('the human bids with the keyboard, illegal cards are refused with feedback,
   await context.close();
 });
 
+test('a risky bid asks for a second tap when the coach is on, and never when it is off', async () => {
+  // Seed 16 deals the human two aces: Nil is a blunder there.
+  const { page, context } = await openGame(browser, url('autostart=1&fast=1&seed=16&talk=0&sound=0&coach=1'));
+  await waitForHuman(page, 'bid');
+  await page.click('[data-testid=bid-nil]');
+  await page.waitForSelector('[data-testid=bid-warning]');
+  let s = await state(page);
+  assert.equal(s.bids[0], null, 'the risky bid is not placed yet');
+  await page.click('[data-testid=bid-confirm]');
+  s = await waitForHuman(page, 'play');
+  assert.equal(s.bids[0], 0, 'confirming places the Nil');
+  await context.close();
+  const second = await openGame(browser, url('autostart=1&fast=1&seed=16&talk=0&sound=0&coach=0'));
+  await waitForHuman(second.page, 'bid');
+  await second.page.click('[data-testid=bid-nil]');
+  const s2 = await waitForHuman(second.page, 'play');
+  assert.equal(s2.bids[0], 0, 'with the coach off, one tap bids');
+  assert.equal(await second.page.$('[data-testid=bid-warning]'), null);
+  await second.context.close();
+});
+
 test('coach prompts appear, can be turned off from the bubble, and stay off after reload', async () => {
   const { page, context } = await openGame(browser, url('autostart=1&fast=1&seed=11&talk=0&sound=0&coach=1'));
   await waitForHuman(page, 'bid');

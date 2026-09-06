@@ -629,7 +629,8 @@ export class GameController {
       return null;
     }
     // Let the previous prompt finish its minimum display time (errors jump the queue).
-    const remaining = this.coachVisibleId ? minDisplayMs(this.coachVisibleId) - (performance.now() - this.coachShownAt) : 0;
+    const speedFactor = this.settings.speed === 'instant' ? 0 : this.settings.speed === 'fast' ? 0.6 : 1;
+    const remaining = this.coachVisibleId ? minDisplayMs(this.coachVisibleId) * speedFactor - (performance.now() - this.coachShownAt) : 0;
     if (moment !== 'illegal' && remaining > 0 && this.coachVisibleId !== prompt.id) {
       clearTimeout(this.coachDefer);
       this.coachDefer = setTimeout(() => {

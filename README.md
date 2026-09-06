@@ -45,7 +45,9 @@ Bots see only their own hand and public information (`src/engine/view.js`), so c
 - **Solid** uses protected-honour bidding, ducks under a winning partner, wins as cheaply as possible, covers and defends nils and stops taking tricks once the contract is safe.
 - **Expert** adds card counting and void inference, then runs Monte Carlo rollouts: it repeatedly imagines the unseen cards dealt to the other seats (consistent with every void and bid it has observed), plays each candidate card out with the solid policy for everyone, and picks the card with the best expected team score. It bids the same way, evaluating each candidate bid (including nil) by rollout.
 
-`npm run sim` pits the tiers against each other. In 30-game series, solid beats rookie in 100% of games and expert beats solid in 90%.
+`npm run sim` pits the tiers against each other. In 30-game series with the production rollout counts, solid beats rookie in 100% of games and expert beats solid in 93% (making 88% of its contracts, 0.6 bags per hand, and 25 of 28 nils). A competent player at the default Standard table wins a little over half the time; the Hard table wins about 40%.
+
+The bots also follow partnership etiquette that rollout noise must never override: they never trump or overtake a partner's safe winning card, never win a trick while running their own nil if a losing card exists, always try to rescue a nil partner who is winning a trick, and never bid a voluntary double nil.
 
 ## Testing
 
