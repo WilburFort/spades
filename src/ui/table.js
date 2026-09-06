@@ -423,6 +423,11 @@ export class Table {
       slot.dataset.legal = legal ? String(isLegal) : 'none';
       slot.firstChild.tabIndex = legal && isLegal ? 0 : -1;
       slot.firstChild.setAttribute('aria-disabled', legal && !isLegal ? 'true' : 'false');
+      if (!faceDown) {
+        const base = slot.firstChild.getAttribute('aria-label').replace(/, (playable|not playable now)$/, '');
+        slot.firstChild.setAttribute('aria-label', legal ? `${base}, ${isLegal ? 'playable' : 'not playable now'}` : base);
+        slot.firstChild.setAttribute('role', legal && isLegal ? 'button' : 'img');
+      }
     });
   }
 

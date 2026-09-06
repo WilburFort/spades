@@ -57,29 +57,26 @@ test('solid partner still ruffs when a later opponent is known void in the led s
 });
 
 test('vetoes: fourth seat never overtakes or trumps a safe winning partner', () => {
+  // Dealer 0 → seat 1 leads: order 1 → 2 → 3 → 0. Seat 0 is last with a spade and a low diamond.
   const g = rig([
-    ['9C', '2D', '3D', '4D'],
+    ['3S', '2D', '3D', '4D'],
     ['6C', '5D', '6D', '7D'],
     ['QC', '8D', '9D', '10D'],
-    ['2S', 'JD', 'QD', 'KD'],
-  ], { dealer: 2 }); // seat 3 leads? dealer 2 → seat 3 leads. Make seat 1 lead instead by dealer 0.
-  // Simplest: construct order manually.
-  const g2 = rig([
-    ['9C', '2D', '3D', '4D'],
-    ['6C', '5D', '6D', '7D'],
-    ['QC', '8D', '9D', '10D'],
-    ['2S', 'JD', 'QD', 'KD'],
-  ], { dealer: 0 }); // seat 1 leads: 1 → 2 → 3 → 0
-  playCard(g2, 1, parseCard('6C'));
-  playCard(g2, 2, parseCard('QC'));
-  // Remove A♣ K♣ from the unseen pool so Q♣ is boss: pretend they were played earlier.
-  g2.tricks.push({ leader: 0, plays: [{ seat: 0, card: parseCard('AC') }, { seat: 1, card: parseCard('KC') }, { seat: 2, card: parseCard('2C') }, { seat: 3, card: parseCard('3C') }], winner: 0 });
-  playCard(g2, 3, parseCard('2S')); // opponent trumps
-  // Now seat 0 is last; partner (2) is NOT winning (seat 3's spade is). Sanity: vetoes leave choice open.
-  const v0 = viewFor(g2, 0);
-  const a0 = analyze(v0);
-  assert.ok(applyVetoes(v0, a0, distinctCandidates(a0, legalPlays(g2, 0))).length >= 1);
-  void g;
+    ['4C', 'JD', 'QD', 'KD'],
+  ], { dealer: 0 });
+  // A♣ and K♣ were played earlier, so partner's Q♣ is the boss club.
+  g.tricks.push({ leader: 0, plays: [{ seat: 0, card: parseCard('AC') }, { seat: 1, card: parseCard('KC') }, { seat: 2, card: parseCard('2C') }, { seat: 3, card: parseCard('3C') }], winner: 0 });
+  g.tricksWon[0] = 1;
+  g.spadesBroken = true;
+  playCard(g, 1, parseCard('6C'));
+  playCard(g, 2, parseCard('QC'));
+  playCard(g, 3, parseCard('4C'));
+  const v = viewFor(g, 0);
+  const a = analyze(v);
+  assert.equal(a.partnerWinning, true);
+  const cands = applyVetoes(v, a, distinctCandidates(a, legalPlays(g, 0)));
+  assert.ok(!cands.map(cardToString).includes('3S'), `must not trump partner's boss card: ${cands.map(cardToString)}`);
+  assert.ok(cands.length >= 1);
 });
 
 test('vetoes: a nil bidder in last seat never wins when a losing card exists', () => {
