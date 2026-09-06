@@ -417,7 +417,7 @@ export function showGameOver(root, { state, names, stats }) {
     d.innerHTML = `
       <div class="trophy">${trophy}</div>
       <h1 style="text-align:center">${won ? 'You win!' : `${escapeHtml(winners)} win`}</h1>
-      <p style="text-align:center" class="muted">Final score <b style="color:var(--us)">${state.scores[0]}</b> to <b style="color:var(--them)">${state.scores[1]}</b> after ${state.handNumber} hand${state.handNumber === 1 ? '' : 's'}.</p>
+      <p style="text-align:center" class="muted">Final score <b style="color:var(--us)">${state.scores[0]}</b> to <b style="color:var(--them)">${state.scores[1]}</b> after ${state.handNumber} hand${state.handNumber === 1 ? '' : 's'}. <span title="Add ?seed=${state.seed} to the address to replay this deal">Deal #${state.seed}</span></p>
       <div class="statgrid">
         <div class="stat"><b>${stats.contractsMade}/${stats.contracts}</b><small>your team's bids made</small></div>
         <div class="stat"><b>${stats.nilsMade}/${stats.nils}</b><small>nils made (your team)</small></div>

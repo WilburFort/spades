@@ -93,12 +93,14 @@ export class GameController {
     this.state = saved.state;
     this.settings.lineup = saved.lineup;
     this.settings.playerName = saved.playerName || this.settings.playerName;
+    this.blindIntent = Array.isArray(saved.blindIntent) ? saved.blindIntent : [false, false, false, false];
     this._setupPlayers(saved.state.seed + saved.state.handNumber);
     this.table.renderScoreboard(this.state);
     this.table.renderSeats(this.state);
     this.table.renderFans(this.state);
     this.table.renderHand(this.state, { legal: null });
     this.table.renderTrick(this.state);
+    this.table.renderTracker(this.state, this.settings.coach && this.state.phase === PHASE.PLAYING);
     this._runGame(true);
   }
 
@@ -170,6 +172,9 @@ export class GameController {
     this.table.setTurn(null);
     this.table.hideCoach();
     this.table.setHint(null);
+    this.table.hideLastTrick();
+    this.table.lastTrickBtn.hidden = true;
+    this.table.trackerEl.hidden = true;
     this.table.renderScoreboard(state);
     this.table.renderSeats(state);
     this.table.setStatus(`Hand ${state.handNumber} — <span class="hl">${this._name(state.dealer)}</span> deals`);
@@ -290,6 +295,8 @@ export class GameController {
     this.table.setPhase(PHASE.PLAYING);
     this.table.renderSeats(state);
     this.table.renderScoreboard(state);
+    this.table.renderTracker(state, this.settings.coach);
+    this.table.lastTrickBtn.hidden = state.tricks.length === 0;
     while (state.phase === PHASE.PLAYING) {
       this._check(token);
       const seat = state.turn;
@@ -392,6 +399,8 @@ export class GameController {
     this._check(token);
     this.table.renderSeats(state);
     this.table.renderScoreboard(state);
+    this.table.renderTracker(state, this.settings.coach);
+    this.table.lastTrickBtn.hidden = state.phase !== PHASE.PLAYING;
     this.table.floater(won.winner, '+1');
     this._afterTrickTalk(won);
     if (won.winner === 0 && state.tricks.length <= 2) this._coach('wonTrick', { card: won.plays.find((p) => p.seat === 0).card });
@@ -429,6 +438,9 @@ export class GameController {
     this.table.setPhase(state.phase === PHASE.GAME_OVER ? PHASE.GAME_OVER : PHASE.HAND_OVER);
     this.table.setTurn(null);
     this.table.hideCoach();
+    this.table.hideLastTrick();
+    this.table.lastTrickBtn.hidden = true;
+    this.table.trackerEl.hidden = true;
     this.table.renderHand(state, { legal: null });
     this.table.renderSeats(state);
     this.table.setStatus(`Hand ${summary.handNumber} complete`);
@@ -575,7 +587,7 @@ export class GameController {
       return null;
     }
     this.table.showCoach(prompt, {
-      onDismiss: (id) => this._retire(id, true),
+      onDismiss: (id) => this._retire(id, false),
       onOff: () => this._setCoach(false, true),
     });
     if (moment !== 'bid') this._retire(prompt.id, false);
@@ -632,6 +644,7 @@ export class GameController {
   _wireToolbar() {
     const b = this.table.buttons;
     b.hint.addEventListener('click', () => this._hint());
+    this.table.lastTrickBtn.addEventListener('click', () => this.state && this.table.showLastTrick(this.state));
     b.coach.addEventListener('click', () => this._setCoach(!this.settings.coach, true));
     b.sound.addEventListener('click', () => {
       this.settings.sound = !this.settings.sound;
@@ -712,6 +725,7 @@ export class GameController {
     b.sound.classList.toggle('off', !s.sound);
     b.sound.innerHTML = s.sound ? this.table.constructor.name && iconSound(true) : iconSound(false);
     b.hint.hidden = !s.coach;
+    if (this.state) this.table.renderTracker(this.state, s.coach && this.state.phase === PHASE.PLAYING);
   }
 
   // ------------------------------------------------------------ helpers
@@ -763,7 +777,7 @@ export class GameController {
 
   _save() {
     if (!this.state || this.state.phase === PHASE.GAME_OVER) return;
-    saveGame({ state: this.state, lineup: { ...this.settings.lineup }, playerName: this.settings.playerName });
+    saveGame({ state: this.state, lineup: { ...this.settings.lineup }, playerName: this.settings.playerName, blindIntent: this.blindIntent });
   }
 
   _exposeDebugApi() {

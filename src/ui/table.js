@@ -122,6 +122,18 @@ export class Table {
       if (s !== 0) stage.appendChild(fan);
       this.fanEls.push(fan);
     }
+    // spade tracker (coach aid)
+    this.trackerEl = el('div', 'tracker');
+    this.trackerEl.dataset.testid = 'spade-tracker';
+    this.trackerEl.title = 'Spades still unplayed (your own in green)';
+    this.trackerEl.hidden = true;
+    stage.appendChild(this.trackerEl);
+    // last trick button + panel
+    this.lastTrickBtn = el('button', 'textbtn lasttrick', 'Last trick');
+    this.lastTrickBtn.dataset.testid = 'btn-lasttrick';
+    this.lastTrickBtn.hidden = true;
+    stage.appendChild(this.lastTrickBtn);
+    this.lastPanel = null;
     // trick area
     this.trickEl = el('div', 'trick');
     this.trickEl.dataset.testid = 'trick';
@@ -266,7 +278,53 @@ export class Table {
     }
   }
 
-  renderFans(state) {
+  /** Spades still unplayed, as 13 rank pills; the player's own spades are tinted. */
+  renderTracker(state, visible) {
+    this.trackerEl.hidden = !visible || !state.handNumber;
+    if (this.trackerEl.hidden) return;
+    const played = new Set();
+    for (const t of state.tricks) for (const p of t.plays) if (suitOf(p.card) === 3) played.add(p.card);
+    for (const p of state.trick) if (suitOf(p.card) === 3) played.add(p.card);
+    const mine = new Set(state.hands[0].filter((c) => suitOf(c) === 3));
+    const labels = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    let html = '<span class="sp">♠</span>';
+    for (let r = 0; r < 13; r++) {
+      const card = 39 + r;
+      html += `<i class="${played.has(card) ? 'gone' : mine.has(card) ? 'mine' : ''}">${labels[r]}</i>`;
+    }
+    const left = 13 - played.size;
+    html += `<span class="lbl">${left} left</span>`;
+    this.trackerEl.innerHTML = html;
+  }
+
+  /** Show the previous trick in a small panel. */
+  showLastTrick(state) {
+    this.hideLastTrick();
+    const t = state.tricks[state.tricks.length - 1];
+    if (!t) return;
+    const p = el('div', 'lastpanel');
+    p.dataset.testid = 'lastpanel';
+    p.appendChild(el('div', 'title', `Trick ${state.tricks.length} — ${this.names[t.winner]} won`));
+    for (const play of t.plays) {
+      const item = el('div', `lt${play.seat === t.winner ? ' winner' : ''}`);
+      item.appendChild(cardEl(play.card));
+      item.appendChild(el('span', '', escapeHtml(play.seat === 0 ? 'You' : this.names[play.seat])));
+      p.appendChild(item);
+    }
+    this.stage.appendChild(p);
+    this.lastPanel = p;
+    const hide = () => this.hideLastTrick();
+    p.addEventListener('click', hide);
+    this.lastPanelTimer = setTimeout(hide, 3500);
+  }
+
+  hideLastTrick() {
+    clearTimeout(this.lastPanelTimer);
+    this.lastPanel?.remove();
+    this.lastPanel = null;
+  }
+
+  renderFans(state, { dealAnimation = false } = {}) {
     for (let s = 1; s < 4; s++) {
       const fan = this.fanEls[s];
       const n = state.hands[s].length;
@@ -277,6 +335,10 @@ export class Table {
       const span = (n - 1) * step;
       for (let i = 0; i < n; i++) {
         const c = cardEl(0, { faceDown: true });
+        if (dealAnimation) {
+          c.classList.add('dealt');
+          c.style.animationDelay = `calc(var(--dur-deal) * ${i * 2 + (s === 1 ? 0 : s === 2 ? 1 : 2) * 0.66})`;
+        }
         const off = -span / 2 + i * step;
         if (s === 2) {
           c.style.left = `${off - 20}px`;
@@ -408,7 +470,7 @@ export class Table {
     this.clearTrick();
     this.clearHand();
     for (let s = 1; s < 4; s++) this.fanEls[s].innerHTML = '';
-    this.renderFans(state);
+    this.renderFans(state, { dealAnimation: true });
     this.renderHand(state, { legal: null, faceDown, dealAnimation: true });
     const dealMs = this._dur('--dur-deal');
     await this.wait(dealMs * 26 + this._dur('--dur-play'));
