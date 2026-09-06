@@ -9,7 +9,7 @@ import {
 import { createBot, solidPlay } from '../ai/index.js';
 import { Table } from '../ui/table.js';
 import { showLobby, showBidPanel, showBlindNilPanel, showHandSummary, showGameOver, showSettings, showRules, showScoreHistory, confirmDialog } from '../ui/dialogs.js';
-import { coachPrompt, suggestBid, explainHint, tipLimit } from './coach.js';
+import { coachPrompt, suggestBid, explainHint, tipLimit, bidWarning, summaryCoachLine, ONCE_PER_HAND, minDisplayMs } from './coach.js';
 import { lineupBySeat } from './roster.js';
 import { saveSettings, saveGame, loadGame, clearGame } from './settings.js';
 
@@ -78,7 +78,12 @@ export class GameController {
   _newGame() {
     const seed = this.run.seed ?? randomSeed();
     this.run.seed = null; // only the first game uses a URL seed
-    this.state = newGame({ seed, options: { ...this.settings.options }, firstDealer: 0 });
+    // A first-time player deals hand 1 (so they watch three bids first); afterwards the dealer is random.
+    const firstEver = !this.settings.gamesPlayed;
+    this.settings.gamesPlayed = (this.settings.gamesPlayed || 0) + 1;
+    saveSettings(this.settings);
+    this.skipBlindNil = false;
+    this.state = newGame({ seed, options: { ...this.settings.options }, firstDealer: firstEver ? 0 : null });
     this._setupPlayers(seed);
     this.table.setPhase('dealing');
     this.table.renderScoreboard(this.state);
@@ -106,7 +111,8 @@ export class GameController {
 
   _setupPlayers(seed) {
     this.chars = lineupBySeat(this.settings.lineup);
-    this.bots = this.chars.map((c, s) => (c ? createBot(c.tier, { seed: seed * 31 + s * 7 + 1, rollouts: 48, bidSamples: 36, timeBudgetMs: 260, bidBias: c.bidBias || 0 }) : null));
+    // Fixed rollout counts keep a seeded game reproducible; the time budget is only a safety net.
+    this.bots = this.chars.map((c, s) => (c ? createBot(c.tier, { seed: seed * 31 + s * 7 + 1, rollouts: 48, bidSamples: 36, timeBudgetMs: 1500, bidBias: c.bidBias || 0 }) : null));
     if (this.run.autoplay) this.autoBot = createBot('solid', { seed: seed + 99 });
     this.quipRng = new Rng(seed ^ 0x5bd1e995);
     this.table.setLineup(this.chars, this.settings.playerName);
@@ -122,7 +128,7 @@ export class GameController {
     }
     this.bidPanel?.close();
     this.bidPanel = null;
-    this.table.hideCoach();
+    this._hideCoach();
     this.table.hideBubbles();
     this.table.setHint(null);
     this.table.setTurn(null);
@@ -170,7 +176,7 @@ export class GameController {
     const state = this.state;
     this.table.setPhase('dealing');
     this.table.setTurn(null);
-    this.table.hideCoach();
+    this._hideCoach();
     this.table.setHint(null);
     this.table.hideLastTrick();
     this.table.lastTrickBtn.hidden = true;
@@ -180,11 +186,14 @@ export class GameController {
     this.table.setStatus(`Hand ${state.handNumber} — <span class="hl">${this._name(state.dealer)}</span> deals`);
     this.sound.play('deal');
     this.firstFollowShown = false;
+    this.shownThisHand = new Set();
+    this.pendingBroken = null;
+    this.pendingWon = null;
 
     // Blind-nil intentions are formed before anyone looks at their cards.
     this.blindIntent = [false, false, false, false];
     for (let s = 1; s < 4; s++) if (canBidBlindNil(state, s)) this.blindIntent[s] = !!this.bots[s].chooseBlindNil(viewFor(state, s));
-    const humanBlind = canBidBlindNil(state, 0) && !this.run.autoplay;
+    const humanBlind = canBidBlindNil(state, 0) && !this.run.autoplay && !this.skipBlindNil;
 
     await this.table.animateDeal(state, { faceDown: humanBlind });
     this._check(token);
@@ -196,13 +205,21 @@ export class GameController {
       const deficit = state.scores[1] - state.scores[team];
       this._coach('blindnil');
       const choice = await this._await('blind', (resolve) => {
-        this.bidPanel = showBlindNilPanel(this.table.stage, { deficit, onBlind: () => resolve(true), onLook: () => resolve(false) });
+        this.bidPanel = showBlindNilPanel(this.table.stage, {
+          deficit,
+          onBlind: () => resolve(true),
+          onLook: () => resolve(false),
+          onSkip: () => {
+            this.skipBlindNil = true;
+            resolve(false);
+          },
+        });
       });
       this._check(token);
       this.bidPanel?.close();
       this.bidPanel = null;
       this.blindIntent[0] = choice;
-      this.table.hideCoach();
+      this._hideCoach();
       if (!choice) this.table.renderHand(state, { legal: null, faceDown: false });
     }
     this.table.setPhase(PHASE.BIDDING);
@@ -231,7 +248,7 @@ export class GameController {
       this.table.renderScoreboard(state);
       this.sound.play('bid');
     }
-    this.table.hideCoach();
+    this._hideCoach();
     this._save();
   }
 
@@ -244,8 +261,9 @@ export class GameController {
       placeBid(state, 0, this.autoBot.chooseBid(view));
       return;
     }
+    view.names = this.names;
     const prompt = this._coach('bid');
-    const s = suggestBid(view.hand, state.options);
+    const s = suggestBid(view.hand, state.options, view);
     const partnerBid = state.bids[2];
     const partnerText = partnerBid === null ? '' : partnerBid === NIL ? `${this._name(2)} bid Nil.` : `${this._name(2)} bid ${partnerBid}.`;
     const bid = await this._await('bid', (resolve) => {
@@ -254,6 +272,7 @@ export class GameController {
         canNil: state.options.allowNil,
         partnerText,
         coachOn: this.settings.coach,
+        check: (n) => (this.settings.coach ? bidWarning(n, view.hand, state.options, view) : null),
         onBid: (n) => resolve(n),
       });
     });
@@ -261,7 +280,7 @@ export class GameController {
     this.bidPanel?.close();
     this.bidPanel = null;
     placeBid(state, 0, bid);
-    this.table.hideCoach();
+    this._hideCoach();
     if (prompt) this._retire(prompt.id, false);
     this.table.showBubble(0, bid === NIL ? 'Nil!' : `I'll take <span class="bidnum">${bid}</span>.`, 1400);
   }
@@ -313,7 +332,9 @@ export class GameController {
     this.table.renderHand(state, { legal: legalSet });
     this.table.markWinning(currentWinner(state));
     const led = state.trick.length ? suitOf(state.trick[0].card) : null;
-    if (led === null) {
+    if (legal.length === 1 && state.hands[0].length > 1) {
+      this.table.setStatus(`<span class="hl">Your turn</span> — ${Table.pretty(legal[0])} is your only legal card`);
+    } else if (led === null) {
       this.table.setStatus(`<span class="hl">Your turn</span> — lead ${state.spadesBroken || legal.every(isSpade) ? 'any card' : 'any card but a spade'}`);
     } else {
       const must = state.hands[0].some((c) => suitOf(c) === led);
@@ -323,8 +344,16 @@ export class GameController {
     const view = viewFor(state, 0);
     view.names = this.names;
     if (!this.run.autoplay) {
-      this._coach('turn', null, { legal, firstFollow: led !== null && !this.firstFollowShown });
+      const extra = { wonWith: led === null ? this.pendingWon : null, justBroken: this.pendingBroken };
+      this.pendingWon = null;
+      this.pendingBroken = null;
+      this._coach('turn', extra, { legal, firstFollow: led !== null && !this.firstFollowShown });
       if (led !== null) this.firstFollowShown = true;
+      // Nudge an idle newcomer toward the Hint button.
+      clearTimeout(this.idleTimer);
+      this.idleTimer = setTimeout(() => {
+        if (this.settings.coach && this.pending?.kind === 'play') this.table.buttons.hint.classList.add('nudge');
+      }, 9000);
     }
     let card;
     if (this.run.autoplay) {
@@ -333,8 +362,10 @@ export class GameController {
     } else {
       card = await this._await('play', () => {});
     }
+    clearTimeout(this.idleTimer);
+    this.table.buttons.hint.classList.remove('nudge');
     this._check(token);
-    this.table.hideCoach();
+    this._hideCoach();
     this.table.setHint(null);
     await this._commitPlay(0, card, token);
   }
@@ -378,7 +409,8 @@ export class GameController {
     for (const ev of events) {
       if (ev.type === 'spadesBroken') {
         this.table.toast(`Spades are broken — ${ev.seat === 0 ? 'you' : this._name(ev.seat)} played ${cardToPretty(ev.card)}`, 1800);
-        if (ev.seat !== 0 && this.settings.coach) this._coach('spadesBroken', { seat: ev.seat, card: ev.card });
+        // The coach mentions it at the start of the human's next turn, where it can be read.
+        if (ev.seat !== 0) this.pendingBroken = { seat: ev.seat, card: ev.card };
       }
     }
     const won = events.find((e) => e.type === 'trickWon');
@@ -403,7 +435,8 @@ export class GameController {
     this.table.lastTrickBtn.hidden = state.phase !== PHASE.PLAYING;
     this.table.floater(won.winner, '+1');
     this._afterTrickTalk(won);
-    if (won.winner === 0 && state.tricks.length <= 2) this._coach('wonTrick', { card: won.plays.find((p) => p.seat === 0).card });
+    // "You won, so you lead" is folded into the next lead prompt rather than flashed here.
+    this.pendingWon = won.winner === 0 ? won.plays.find((p) => p.seat === 0).card : null;
     this.table.setAnimating(false);
     this._save();
   }
@@ -437,7 +470,7 @@ export class GameController {
     if (!summary) return;
     this.table.setPhase(state.phase === PHASE.GAME_OVER ? PHASE.GAME_OVER : PHASE.HAND_OVER);
     this.table.setTurn(null);
-    this.table.hideCoach();
+    this._hideCoach();
     this.table.hideLastTrick();
     this.table.lastTrickBtn.hidden = true;
     this.table.trackerEl.hidden = true;
@@ -465,7 +498,8 @@ export class GameController {
       this._quip(2, 'set');
       await beat(900);
     } else if (t0.bid > 0 && t0.made) {
-      if (this.quipRng.chance(0.5)) this._quip(2, 'madeBid');
+      const clean = t0.bagsAdded === 0 && this.chars[2].quips.madeBidClean;
+      if (this.quipRng.chance(0.5)) this._quip(2, clean ? 'madeBidClean' : 'madeBid');
     }
     if (t1.bid > 0 && t1.made) {
       const seat = this.quipRng.pick([1, 3]);
@@ -496,6 +530,7 @@ export class GameController {
       tricks: state.tricks,
       gameOver: state.phase === PHASE.GAME_OVER,
       instant,
+      coachLine: this.settings.coach && !this.run.autoplay ? summaryCoachLine(summary, this.names) : null,
     });
     this._check(token);
     this.table.renderScoreboard(state);
@@ -566,6 +601,11 @@ export class GameController {
   }
 
   // ------------------------------------------------------------ coach & talk
+  /**
+   * Show the coach prompt for a moment, if there is one and it has not been
+   * used up. Informational prompts keep a minimum on-screen time, so a new
+   * prompt waits its turn instead of overwriting one that is still being read.
+   */
   _coach(moment, extra = null, more = {}) {
     if (!this.settings.coach || !this.state) return null;
     const view = viewFor(this.state, 0);
@@ -578,20 +618,48 @@ export class GameController {
       return null;
     }
     if (!prompt) {
-      if (moment === 'turn') this.table.hideCoach();
+      if (moment === 'turn') this._hideCoach();
       return null;
     }
     const seen = this.settings.seenTips[prompt.id] || 0;
-    if (seen >= tipLimit(prompt.id)) {
-      if (moment === 'turn') this.table.hideCoach();
+    const usedUp = seen >= tipLimit(prompt.id);
+    const onceThisHand = ONCE_PER_HAND.has(prompt.id) && this.shownThisHand?.has(prompt.id) && !more.reshow;
+    if (usedUp || onceThisHand) {
+      if (moment === 'turn') this._hideCoach();
       return null;
+    }
+    // Let the previous prompt finish its minimum display time (errors jump the queue).
+    const remaining = this.coachVisibleId ? minDisplayMs(this.coachVisibleId) - (performance.now() - this.coachShownAt) : 0;
+    if (moment !== 'illegal' && remaining > 0 && this.coachVisibleId !== prompt.id) {
+      clearTimeout(this.coachDefer);
+      this.coachDefer = setTimeout(() => {
+        if (!this.state || !this.settings.coach) return;
+        if (moment === 'turn' && !(this.pending?.kind === 'play' && this.state.turn === 0)) return;
+        if (moment === 'bid' && this.pending?.kind !== 'bid') return;
+        this.coachVisibleId = null;
+        this._coach(moment, extra, more);
+      }, remaining + 40);
+      return prompt;
     }
     this.table.showCoach(prompt, {
       onDismiss: (id) => this._retire(id, false),
       onOff: () => this._setCoach(false, true),
     });
-    if (moment !== 'bid') this._retire(prompt.id, false);
+    this.coachVisibleId = prompt.id;
+    this.coachShownAt = performance.now();
+    this.shownThisHand?.add(prompt.id);
+    if (prompt.alsoId) this.shownThisHand?.add(prompt.alsoId);
+    if (moment !== 'bid' && !more.reshow) {
+      this._retire(prompt.id, false);
+      if (prompt.alsoId) this._retire(prompt.alsoId, false);
+    }
     return prompt;
+  }
+
+  _hideCoach() {
+    clearTimeout(this.coachDefer);
+    this.coachVisibleId = null;
+    this.table.hideCoach();
   }
 
   /** Count a showing (or retire the tip for good when dismissed). */
@@ -607,12 +675,12 @@ export class GameController {
     saveSettings(this.settings);
     this._applySettingsToUi();
     if (!on) {
-      this.table.hideCoach();
+      this._hideCoach();
       this.table.setHint(null);
       if (announce) this.table.toast('Coach tips are off. The lightbulb button turns them back on.', 2600);
     } else if (announce) {
       this.table.toast('Coach tips are on.', 1400);
-      if (this.state?.phase === PHASE.PLAYING && this.state.turn === 0 && this.pending?.kind === 'play') this._coach('turn');
+      if (this.state?.phase === PHASE.PLAYING && this.state.turn === 0 && this.pending?.kind === 'play') this._coach('turn', null, { reshow: true });
     }
   }
 
@@ -666,7 +734,7 @@ export class GameController {
         saveSettings(this.settings);
         this._applySettingsToUi();
         if (key === 'coach' && !value) {
-          this.table.hideCoach();
+          this._hideCoach();
           this.table.setHint(null);
         }
       },

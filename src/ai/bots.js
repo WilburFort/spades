@@ -9,7 +9,7 @@
 
 import { Rng } from '../engine/rng.js';
 import { NIL } from '../engine/scoring.js';
-import { rookieBid, solidBid, expertHeuristicBid, wantsBlindNil, looksLikeNil, nilRisk } from './bidding.js';
+import { rookieBid, solidBid, expertHeuristicBid, wantsBlindNil, looksLikeNil, nilRisk, nilContext } from './bidding.js';
 import { rookiePlay, solidPlay } from './play.js';
 import { monteCarloPlay, monteCarloBid } from './montecarlo.js';
 
@@ -64,12 +64,15 @@ export function createBot(tier, opts = {}) {
       if (view.options.allowNil && looksLikeNil(view.hand)) return NIL;
       return Math.max(1, Math.min(13, Math.round(heuristic - 0.15)));
     }
-    const h = Math.max(1, Math.min(13, Math.round(heuristic)));
+    const { partnerNil, oppNil } = nilContext(view);
+    const h = Math.max(1, Math.min(13, Math.round(heuristic + (partnerNil ? 0.5 : 0))));
     const candidates = [...new Set([Math.max(1, h - 1), h, Math.min(13, h + 1)])];
     const team = view.seat % 2;
     const behind = view.scores[1 - team] - view.scores[team];
     const risk = nilRisk(view.hand).expectedTricks;
-    const nilPlausible = view.options.allowNil && (looksLikeNil(view.hand) || risk < (behind >= 150 ? 1.6 : 1.3));
+    let nilPlausible = view.options.allowNil && (looksLikeNil(view.hand) || risk < (behind >= 150 ? 1.6 : 1.3));
+    if (partnerNil) nilPlausible = false; // never a voluntary double nil
+    if (oppNil && risk >= 0.6) nilPlausible = false; // an opponent's nil makes ours much harder to make
     if (nilPlausible) candidates.push(NIL);
 
     const mc = monteCarloBid(view, rng, { samples: bidSamples, timeBudgetMs, candidates });

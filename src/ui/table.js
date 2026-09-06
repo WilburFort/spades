@@ -125,7 +125,7 @@ export class Table {
     // spade tracker (coach aid)
     this.trackerEl = el('div', 'tracker');
     this.trackerEl.dataset.testid = 'spade-tracker';
-    this.trackerEl.title = 'Spades still unplayed (your own in green)';
+    this.trackerEl.title = 'Spades still unplayed — the ones in your own hand are shown in teal';
     this.trackerEl.hidden = true;
     stage.appendChild(this.trackerEl);
     // last trick button + panel
@@ -270,9 +270,10 @@ export class Table {
         chip.innerHTML = `<span class="${cls}">${state.blind[s] ? 'BLIND NIL' : 'NIL'}</span><span>· won <b>${won}</b></span>`;
       } else {
         const pips = [];
-        const n = Math.max(bid, won);
+        const n = Math.min(8, Math.max(bid, won));
         for (let i = 0; i < n; i++) pips.push(`<i class="${i < won ? (i < bid ? 'won' : 'bag') : ''}"></i>`);
-        chip.innerHTML = `<span>Bid <b>${bid}</b></span><span>· won <b>${won}</b></span><span class="pips" title="${won} of ${bid}">${pips.join('')}</span>`;
+        const more = Math.max(bid, won) > 8 ? `<span style="font-size:10px">+${Math.max(bid, won) - 8}</span>` : '';
+        chip.innerHTML = `<span>Bid <b>${bid}</b></span><span>· won <b>${won}</b></span><span class="pips" title="${won} of ${bid}">${pips.join('')}${more}</span>`;
       }
       this.$(`[data-testid=dealer-${s}]`).hidden = state.dealer !== s || !state.handNumber;
     }
@@ -293,7 +294,7 @@ export class Table {
       html += `<i class="${played.has(card) ? 'gone' : mine.has(card) ? 'mine' : ''}">${labels[r]}</i>`;
     }
     const left = 13 - played.size;
-    html += `<span class="lbl">${left} left</span>`;
+    html += `<span class="lbl">${left} spade${left === 1 ? '' : 's'} left</span>`;
     this.trackerEl.innerHTML = html;
   }
 

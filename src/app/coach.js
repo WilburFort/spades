@@ -1,53 +1,78 @@
 // The coach: short, contextual prompts that explain what to do next. It is a
 // pure function of the situation plus a small memory of what has been shown,
 // so it never nags: concept tips show once, rule tips retire after a few
-// showings, and strategy nudges only fire at teachable moments.
+// showings, and strategy nudges fire at most once per hand at teachable moments.
 
-import { suitOf, rankOf, SPADES, SUIT_NAMES, cardToPretty, rankLabel } from '../engine/cards.js';
+import { suitOf, rankOf, SPADES, cardToPretty, rankLabel } from '../engine/cards.js';
 import { NIL, partnerOf, teamOf } from '../engine/scoring.js';
-import { analyze, beatsCurrent, estimateTricks, looksLikeNil } from '../ai/index.js';
+import { analyze, beatsCurrent, estimateTricks, looksLikeNil, nilRisk } from '../ai/index.js';
 import { groupBySuit } from '../ai/analysis.js';
 
 const SUIT_WORD = ['clubs', 'diamonds', 'hearts', 'spades'];
+const SUIT_ONE = ['club', 'diamond', 'heart', 'spade'];
 const SUIT_SYM = ['♣', '♦', '♥', '♠'];
 
-/** How many times a prompt id may be shown before it retires (Infinity = always). */
+/** How many times a prompt id may be shown in total before it retires (Infinity = always). */
 const LIMITS = {
   welcome: 1,
   'bid-intro': 2,
   'bid-suggest': Infinity,
-  'nil-candidate': 3,
+  'nil-candidate': 4,
   'blind-nil': 2,
   'lead-first': 2,
-  'lead-any': 1,
   'follow-first': 2,
   'spades-broken': 2,
-  'partner-winning': 3,
-  'contract-made': 3,
-  'partner-nil': 3,
-  'opp-nil': 3,
-  'my-nil': 3,
-  'set-chance': 3,
-  'one-more': 2,
-  'won-trick': 1,
+  'won-trick': 2,
+  'partner-winning': 6,
+  'contract-made': 6,
+  'partner-nil': 6,
+  'opp-nil': 6,
+  'my-nil': 6,
+  'set-chance': 6,
+  'set-risk': 6,
+  'one-more': 4,
   'illegal-suit': Infinity,
   'illegal-spades': Infinity,
   'only-spades': 2,
-  'dump-high': 2,
+  'dump-high': 3,
+  hint: Infinity,
 };
+
+/** Strategy nudges: at most once per hand so they land when the idea matters, not three turns in a row. */
+export const ONCE_PER_HAND = new Set(['partner-winning', 'contract-made', 'partner-nil', 'opp-nil', 'my-nil', 'set-chance', 'set-risk', 'one-more', 'dump-high']);
+
+/** Minimum time a prompt should stay readable before another may replace it (ms). */
+export function minDisplayMs(id) {
+  if (id === 'welcome') return 6500;
+  if (id === 'illegal-suit' || id === 'illegal-spades') return 2500;
+  if (id === 'hint') return 0;
+  return 2000;
+}
 
 export function tipLimit(id) {
   return LIMITS[id] ?? 2;
 }
 
 /**
- * Suggest a bid for the human with a plain-English reason.
+ * Suggest a bid for the human with a plain-English reason, shaded for the bids
+ * already on the table (a partner who bid big has already claimed the tricks).
  */
-export function suggestBid(hand, options) {
+export function suggestBid(hand, options, view = null) {
   const est = estimateTricks(hand);
   let bid = Math.max(1, Math.round(est - 0.15));
   const reasons = bidReasons(hand);
-  const nil = options.allowNil && looksLikeNil(hand);
+  let nil = options.allowNil && looksLikeNil(hand);
+  if (view) {
+    const me = view.seat;
+    const partnerBid = view.bids[partnerOf(me)];
+    const partnerNil = partnerBid === NIL;
+    const others = view.bids.reduce((sum, b) => sum + (b !== null && b !== NIL ? b : 0), 0);
+    if (partnerNil) nil = false;
+    if (partnerBid !== null && !partnerNil && (partnerBid + bid >= 9 || others + bid > 13) && bid > 1) {
+      bid -= 1;
+      reasons.push(`${view.names ? view.names[partnerOf(me)] : 'your partner'} already bid ${partnerBid}, so ${bid} is enough — the table only has 13 tricks`);
+    }
+  }
   return { bid, est, reasons, nil };
 }
 
@@ -55,7 +80,6 @@ function bidReasons(hand) {
   const g = groupBySuit(hand);
   const parts = [];
   const spades = g[SPADES];
-  const spadeRanks = spades.map(rankOf);
   const highSpades = spades.filter((c) => rankOf(c) >= 12).map(cardToPretty);
   if (highSpades.length) parts.push(`${highSpades.join(' ')} ${highSpades.length === 1 ? 'is' : 'are'} likely to win`);
   if (spades.length >= 4) parts.push(`${spades.length} spades give you extra trump tricks`);
@@ -65,15 +89,57 @@ function bidReasons(hand) {
     else if (cards.some((c) => rankOf(c) === 13) && cards.length >= 2) parts.push(`K${SUIT_SYM[s]} is protected by other ${SUIT_WORD[s]}`);
     if (cards.length === 0 && spades.length >= 3) parts.push(`you can trump ${SUIT_WORD[s]}`);
   }
-  if (!parts.length) parts.push(spadeRanks.length ? 'your cards are low, so expect few tricks' : 'with no spades, expect very few tricks');
+  if (!parts.length) parts.push(spades.length ? 'your cards are low, so expect few tricks' : 'with no spades, expect very few tricks');
   return parts;
+}
+
+/**
+ * A warning when the player's chosen bid looks like a blunder, or null.
+ */
+export function bidWarning(bid, hand, options, view) {
+  const s = suggestBid(hand, options, view);
+  if (bid === NIL) {
+    const risk = nilRisk(hand);
+    const g = groupBySuit(hand);
+    const aces = hand.filter((c) => rankOf(c) === 14).map(cardToPretty);
+    const highSpades = g[SPADES].filter((c) => rankOf(c) >= 11).map(cardToPretty);
+    if (view && view.bids[partnerOf(view.seat)] === NIL) return `Your partner already bid Nil — two Nils on one team almost never both succeed.`;
+    if (aces.length || highSpades.length || risk.expectedTricks > 1.2) {
+      const why = [...aces, ...highSpades].length ? `you hold ${[...aces, ...highSpades].join(' ')}, which will probably win a trick` : 'several of your cards are likely to win a trick';
+      return `Nil is risky here: ${why}. A busted Nil costs 100.`;
+    }
+    return null;
+  }
+  if (bid >= s.bid + 3) return `That's ${bid - s.bid} more than the ${s.bid} the coach expects from this hand. Missing the bid costs ${bid * 10} points.`;
+  return null;
+}
+
+/**
+ * One sentence for the hand summary about the human team's result, or null.
+ */
+export function summaryCoachLine(summary, names) {
+  const t = summary.teams[0];
+  const me = summary.bids[0];
+  const myNil = t.nils.find((n) => n.seat === 0);
+  if (myNil) {
+    if (myNil.made) return `Nil made — +${myNil.blind ? 200 : 100}. Keeping every trick below the winning card is exactly the idea.`;
+    return `Your Nil was busted by ${myNil.tricks} trick${myNil.tricks === 1 ? '' : 's'} (−${myNil.blind ? 200 : 100}). Nil wants low cards in every suit and a partner who can win tricks over you.`;
+  }
+  if (t.bagPenalty) return `Ten bags cost your team ${t.bagPenalty}. Once your bid is safe, throw your lowest cards and let the others win.`;
+  if (t.bid > 0 && !t.made) {
+    const short = t.bid - t.tricksCounted;
+    return `You bid ${me}${names ? ` and ${names[2]} bid ${summary.bids[2] === NIL ? 'Nil' : summary.bids[2]}` : ''}: ${t.tricksTotal} tricks was ${short} short, so the whole bid was lost (−${t.bid * 10}). When a hand is uncertain, bid one lower.`;
+  }
+  if (t.bid > 0 && t.made && t.bagsAdded >= 2) return `Bid ${t.bid}, took ${t.tricksTotal}: ${t.bid * 10} points plus ${t.bagsAdded} bags. Bags carry over and cost 100 at ten — aim to land the bid exactly.`;
+  if (t.bid > 0 && t.made && t.bagsAdded === 0) return `Bid ${t.bid}, took exactly ${t.tricksTotal}: no bags. That is the ideal result.`;
+  return null;
 }
 
 /**
  * Compute a prompt for the given moment, or null.
  * @param {object} ctx
- * @param {'welcome'|'bid'|'blindnil'|'turn'|'illegal'|'spadesBroken'|'wonTrick'} ctx.moment
- * @param {object} ctx.view    the human's view
+ * @param {'welcome'|'bid'|'blindnil'|'turn'|'illegal'} ctx.moment
+ * @param {object} ctx.view    the human's view (with .names)
  * @param {string[]} ctx.names names by seat
  * @param {object} [ctx.extra] moment-specific data
  */
@@ -87,7 +153,7 @@ export function coachPrompt(ctx) {
   if (moment === 'welcome') {
     return {
       id: 'welcome',
-      text: `Welcome to the table! You're playing with <b>${N(partner)}</b>, sitting across from you. <b>${N(opps[0])}</b> and <b>${N(opps[1])}</b> are the other team. Each hand starts with everyone bidding how many tricks they expect to win.`,
+      text: `Welcome to the table! Your partner is <b>${N(partner)}</b>, across from you; <b>${N(opps[0])}</b> and <b>${N(opps[1])}</b> are the other team. A hand has 13 <b>tricks</b>: everyone plays one card and the highest card of the suit led wins, unless someone plays a spade. First, everyone <b>bids</b> how many tricks they expect to win.`,
     };
   }
 
@@ -101,9 +167,9 @@ export function coachPrompt(ctx) {
   }
 
   if (moment === 'bid') {
-    const s = suggestBid(view.hand, view.options);
+    const s = suggestBid(view.hand, view.options, view);
     const partnerBid = view.bids[partner];
-    const partnerText = partnerBid === null ? '' : partnerBid === NIL ? ` ${N(partner)} bid Nil, so your team's tricks are all yours to win.` : ` ${N(partner)} bid ${partnerBid}; your team needs your bid plus theirs.`;
+    const partnerText = partnerBid === null ? '' : partnerBid === NIL ? ` ${N(partner)} bid Nil, so every trick your team needs is yours to win.` : ` ${N(partner)} bid ${partnerBid}; your team needs your bid plus theirs.`;
     if (s.nil) {
       return {
         id: 'nil-candidate',
@@ -116,7 +182,7 @@ export function coachPrompt(ctx) {
     return {
       id: first ? 'bid-intro' : 'bid-suggest',
       text: first
-        ? `Time to bid. Your bid is the number of tricks you think you'll win. Aces and high spades are near-certain winners; a king with company usually wins too. Suggested bid: <b>${s.bid}</b>.${partnerText}`
+        ? `Time to bid. Count the tricks you expect to win: aces and high spades are near-certain winners, and a king with company usually wins too. Suggested bid: <b>${s.bid}</b>.${partnerText}`
         : `Suggested bid: <b>${s.bid}</b>.${partnerText}`,
       why: s.reasons.join('; ') + '.',
       suggest: s.bid,
@@ -138,25 +204,12 @@ export function coachPrompt(ctx) {
     };
   }
 
-  if (moment === 'spadesBroken') {
-    const { seat, card } = ctx.extra;
-    return {
-      id: 'spades-broken',
-      text: `<b>Spades are broken</b> — ${seat === me ? 'you' : N(seat)} played ${cardToPretty(card)} on another suit. From now on anyone may lead spades.`,
-    };
-  }
-
-  if (moment === 'wonTrick') {
-    const { card } = ctx.extra;
-    return { id: 'won-trick', text: `You won the trick with ${cardToPretty(card)}. The winner of a trick <b>leads the next one</b>.` };
-  }
-
   if (moment === 'turn') return turnPrompt(ctx);
   return null;
 }
 
 function turnPrompt(ctx) {
-  const { view, names, legal } = ctx;
+  const { view, names, legal, extra } = ctx;
   const a = analyze(view);
   const me = a.me;
   const partner = a.partner;
@@ -167,57 +220,67 @@ function turnPrompt(ctx) {
   const myNeed = a.need[a.myTeam];
   const oppNeed = a.need[a.oppTeam];
   const firstHand = view.handNumber <= 1;
+  const oppNames = `${N((me + 1) % 4)} & ${N((me + 3) % 4)}`;
 
+  // Things that just happened and deserve a sentence before the advice.
+  let prefix = '';
+  let prefixId = null;
+  if (extra?.justBroken) {
+    const b = extra.justBroken;
+    prefix += `<b>Spades are broken</b> — ${b.seat === me ? 'you' : N(b.seat)} played ${cardToPretty(b.card)} on another suit, so spades may now be led. `;
+    prefixId = 'spades-broken';
+  }
+  if (a.leading && extra?.wonWith !== undefined && extra?.wonWith !== null) {
+    prefix += `You won that trick with ${cardToPretty(extra.wonWith)}, so <b>you lead</b>. `;
+    prefixId = prefixId || 'won-trick';
+  }
+
+  let p = null;
   if (a.leading) {
     const onlySpades = legal.every((c) => suitOf(c) === SPADES) && view.hand.some((c) => suitOf(c) === SPADES);
-    if (onlySpades && !view.spadesBroken) {
-      return { id: 'only-spades', text: `You only have spades left, so you're allowed to lead one even though spades aren't broken.` };
-    }
-    if (myNil) return { id: 'my-nil', text: `You bid <b>Nil</b>. Lead your lowest card and hope someone plays higher — every trick you win costs 100 points.` };
-    if (partnerNil) return { id: 'partner-nil', text: `<b>${N(partner)}</b> bid Nil. Help by winning tricks: lead your high cards so they can slip low cards underneath.` };
-    if (oppNil !== undefined) return { id: 'opp-nil', text: `<b>${N(oppNil)}</b> bid Nil. Try to force them to win a trick: lead <b>low</b> cards they may have to beat.` };
-    if (myNeed <= 0 && oppNeed > 0 && a.tricksRemaining - oppNeed <= 1) {
-      return { id: 'set-chance', text: `Your bid is safe and <b>${N((me + 1) % 4)} & ${N((me + 3) % 4)}</b> still need ${oppNeed} of the last ${a.tricksRemaining} tricks. Win tricks now to <b>set</b> them.` };
-    }
-    if (myNeed <= 0) return { id: 'contract-made', text: `Your team has <b>made its bid</b>. Extra tricks are <b>bags</b> — every ten bags costs 100 points — so lead low and let the others take the rest.` };
-    if (myNeed === 1) return { id: 'one-more', text: `One more trick makes your team's bid. Lead a sure winner if you have one.` };
-    if (firstHand && !view.spadesBroken) {
-      return { id: 'lead-first', text: `You lead. Play any card except a spade — spades can't be led until someone plays one on another suit. High cards or a long suit are good openers.` };
-    }
-    return null;
+    if (onlySpades && !view.spadesBroken) p = { id: 'only-spades', text: `You only have spades left, so you're allowed to lead one even though spades aren't broken.` };
+    else if (myNil) p = { id: 'my-nil', text: `You bid <b>Nil</b>. Lead your lowest card and hope someone plays higher — every trick you win costs 100 points.` };
+    else if (partnerNil) p = { id: 'partner-nil', text: `<b>${N(partner)}</b> bid Nil. Help by winning tricks: lead your high cards so they can slip low cards underneath.` };
+    else if (oppNil !== undefined) p = { id: 'opp-nil', text: `<b>${N(oppNil)}</b> bid Nil. Try to force them to win a trick: lead <b>low</b> cards they may have to beat.` };
+    else if (myNeed > 0 && myNeed >= a.tricksRemaining - 1 && myNeed >= 2) p = { id: 'set-risk', text: `Your team still needs <b>${myNeed}</b> of the last ${a.tricksRemaining} tricks or you lose ${a.teamBid[a.myTeam] * 10} points — win everything you can.` };
+    else if (myNeed <= 0 && oppNeed > 0 && a.tricksRemaining - oppNeed <= 1) p = { id: 'set-chance', text: `Your bid is safe and <b>${oppNames}</b> still need ${oppNeed} of the last ${a.tricksRemaining} tricks. Win tricks now to <b>set</b> them.` };
+    else if (myNeed <= 0) p = { id: 'contract-made', text: `Your team has <b>made its bid</b>. Extra tricks are <b>bags</b> — every ten bags costs 100 points — so lead low and let the others take the rest.` };
+    else if (myNeed === 1) p = { id: 'one-more', text: `One more trick makes your team's bid. Lead a sure winner if you have one.` };
+    else if (firstHand && !view.spadesBroken) p = { id: 'lead-first', text: `You lead. Play any card except a spade — spades can't be led until someone plays one on another suit. High cards or a long suit are good openers.` };
+  } else {
+    const led = a.ledSuit;
+    const canFollow = view.hand.some((c) => suitOf(c) === led);
+    if (myNil) p = { id: 'my-nil', text: `Nil in progress: play your <b>highest card that still loses</b>. If you can't follow suit, dump your most dangerous card (but not a spade that would win).` };
+    else if (firstHand && canFollow && ctx.firstFollow) {
+      p = {
+        id: 'follow-first',
+        text: `${N(view.leader)} led ${SUIT_WORD[led]} ${SUIT_SYM[led]}. You must play a ${SUIT_ONE[led]} if you have one. The highest ${SUIT_ONE[led]} wins unless someone plays a <b>spade</b> — spades beat everything.`,
+      };
+    } else if (partnerNil && a.partnerYetToPlay) p = { id: 'partner-nil', text: `<b>${N(partner)}</b> (Nil) hasn't played yet. Win this trick with a <b>high</b> card so they can duck under it.` };
+    else if (partnerNil && a.partnerWinning) p = { id: 'partner-nil', text: `<b>${N(partner)}</b> is winning this trick — bad news for their Nil. Beat their card if you possibly can!` };
+    else if (oppNil !== undefined && a.winnerSeat === oppNil) p = { id: 'opp-nil', text: `<b>${N(oppNil)}</b> bid Nil and is currently winning this trick. Don't beat them — let them take it and bust the Nil!` };
+    else if (oppNil !== undefined && a.seatsAfterMe.includes(oppNil)) p = { id: 'opp-nil', text: `<b>${N(oppNil)}</b> (Nil) plays after you. Keep the trick <b>low</b> so they're forced to win it.` };
+    else if (a.partnerWinning && (a.isLast || rankOf(a.winnerCard) > a.highestUnseen[led] || suitOf(a.winnerCard) === SPADES)) {
+      p = { id: 'partner-winning', text: `<b>${N(partner)}</b> is already winning this trick. Save your high cards — play your lowest.` };
+    } else if (!canFollow) {
+      const hasSpade = view.hand.some((c) => suitOf(c) === SPADES);
+      const winners = legal.filter((c) => beatsCurrent(a, c));
+      if (led === SPADES || !hasSpade) p = { id: 'dump-high', text: `You're out of ${SUIT_WORD[led]}, so you may play <b>any</b> card. ${hasSpade ? 'A higher spade would win the trick; otherwise' : 'You have no spades to trump with, so'} discard a card you don't need — a high card from another suit avoids future bags.` };
+      else if (myNeed > 0 && winners.length && !a.partnerWinning) p = { id: 'dump-high', text: `You're out of ${SUIT_WORD[led]}, so you may play <b>any</b> card — including a spade to <b>trump</b> the trick. Your lowest winning spade is enough.` };
+      else if (myNeed <= 0) p = { id: 'contract-made', text: `You're out of ${SUIT_WORD[led]} and your bid is already made. Throw away a card you don't want — a high card from another suit avoids future bags.` };
+      else p = { id: 'dump-high', text: `You're out of ${SUIT_WORD[led]}, so you may play any card. A spade would trump the trick; otherwise discard a card you don't need.` };
+    } else if (myNeed > 0 && myNeed >= a.tricksRemaining - 1 && myNeed >= 2) p = { id: 'set-risk', text: `Your team still needs <b>${myNeed}</b> of the last ${a.tricksRemaining} tricks or you lose ${a.teamBid[a.myTeam] * 10} points — win this one if you can.` };
+    else if (myNeed <= 0 && oppNeed > 0 && a.tricksRemaining - oppNeed <= 1) p = { id: 'set-chance', text: `Your bid is safe and the other team still needs ${oppNeed} of the last ${a.tricksRemaining} tricks. Win this one to <b>set</b> them.` };
+    else if (myNeed <= 0 && legal.some((c) => !beatsCurrent(a, c))) p = { id: 'contract-made', text: `Your team's bid is made — extra tricks are bags. Play under the winning card if you can.` };
   }
 
-  // Following
-  const led = a.ledSuit;
-  const canFollow = view.hand.some((c) => suitOf(c) === led);
-  if (myNil) {
-    return { id: 'my-nil', text: `Nil in progress: play your <b>highest card that still loses</b>. If you can't follow suit, dump your most dangerous card (but not a winning spade).` };
+  if (!p && !prefix) return null;
+  if (!p) {
+    const tail = a.leading ? (view.spadesBroken ? 'Lead any card.' : 'Lead any card except a spade.') : '';
+    return { id: prefixId, text: (prefix + tail).trim() };
   }
-  if (firstHand && canFollow && (view.tricks.length === 0 || ctx.firstFollow)) {
-    return {
-      id: 'follow-first',
-      text: `${N(view.leader)} led ${SUIT_WORD[led]} ${SUIT_SYM[led]}. You must play a ${SUIT_WORD[led].slice(0, -1)} if you have one. The highest ${SUIT_WORD[led].slice(0, -1)} wins unless someone plays a <b>spade</b> — spades beat everything.`,
-    };
-  }
-  if (partnerNil && a.partnerYetToPlay) return { id: 'partner-nil', text: `<b>${N(partner)}</b> (Nil) hasn't played yet. Win this trick with a <b>high</b> card so they can duck under it.` };
-  if (partnerNil && a.partnerWinning) return { id: 'partner-nil', text: `<b>${N(partner)}</b> is winning this trick — bad news for their Nil. Beat their card if you possibly can!` };
-  if (oppNil !== undefined && a.winnerSeat === oppNil) return { id: 'opp-nil', text: `<b>${N(oppNil)}</b> bid Nil and is currently winning this trick. Don't beat them — let them take it and bust the Nil!` };
-  if (oppNil !== undefined && a.seatsAfterMe.includes(oppNil)) return { id: 'opp-nil', text: `<b>${N(oppNil)}</b> (Nil) plays after you. Keep the trick <b>low</b> so they're forced to win it.` };
-  if (a.partnerWinning) {
-    const partnerSure = rankOf(a.winnerCard) > a.highestUnseen[led] || suitOf(a.winnerCard) === SPADES;
-    if (partnerSure || a.isLast) return { id: 'partner-winning', text: `<b>${N(partner)}</b> is already winning this trick. Save your high cards — play your lowest.` };
-  }
-  if (!canFollow) {
-    const winners = legal.filter((c) => beatsCurrent(a, c));
-    if (myNeed > 0 && winners.length && !a.partnerWinning) return { id: 'dump-high', text: `You're out of ${SUIT_WORD[led]}, so you may play <b>any</b> card — including a spade to <b>trump</b> the trick. Your lowest winning spade is enough.` };
-    if (myNeed <= 0) return { id: 'contract-made', text: `You're out of ${SUIT_WORD[led]} and your bid is already made. Throw away a card you don't want — a high card from another suit avoids future bags.` };
-    return { id: 'dump-high', text: `You're out of ${SUIT_WORD[led]}, so you may play any card. A spade would win the trick; otherwise discard a card you don't need.` };
-  }
-  if (myNeed <= 0 && oppNeed > 0 && a.tricksRemaining - oppNeed <= 1) {
-    return { id: 'set-chance', text: `Your bid is safe and the other team still needs ${oppNeed} of the last ${a.tricksRemaining} tricks. Win this one to <b>set</b> them.` };
-  }
-  if (myNeed <= 0 && legal.some((c) => !beatsCurrent(a, c))) return { id: 'contract-made', text: `Your team's bid is made — extra tricks are bags. Play under the winning card if you can.` };
-  return null;
+  if (prefix) return { ...p, id: prefixId && p.id.startsWith('lead') ? prefixId : p.id, text: prefix + p.text, alsoId: prefixId };
+  return p;
 }
 
 /** Short reason for a hinted card. */
@@ -226,19 +289,17 @@ export function explainHint(view, card) {
   const me = a.me;
   const myNil = view.bids[me] === NIL && a.nilLive[me];
   const pretty = cardToPretty(card);
+  const nm = view.names || ['You', 'West', 'North', 'East'];
   if (a.leading) {
     if (myNil) return `${pretty} is your lowest card — a good Nil lead.`;
-    if (rankOf(card) > a.highestUnseen[suitOf(card)]) return `${pretty} is the highest ${SUIT_NAMES[suitOf(card)].slice(0, -1)} still out there.`;
+    if (rankOf(card) > a.highestUnseen[suitOf(card)]) return `${pretty} is the highest ${SUIT_ONE[suitOf(card)]} still out there.`;
+    if (rankOf(card) >= 11) return `${pretty} is your best remaining ${SUIT_ONE[suitOf(card)]} — it wins unless a higher one is still out.`;
     return `Lead ${pretty}: a low card from your longest suit gives away little.`;
   }
   if (myNil) return `${pretty} stays under the winning card.`;
-  if (a.partnerWinning && !beatsCurrent(a, card)) return `${names(view)[a.partner]} has the trick — ${pretty} keeps your high cards for later.`;
+  if (a.partnerWinning && !beatsCurrent(a, card)) return `${nm[a.partner]} has the trick — ${pretty} keeps your high cards for later.`;
   if (beatsCurrent(a, card)) return suitOf(card) === SPADES && a.ledSuit !== SPADES ? `${pretty} trumps the trick.` : `${pretty} wins the trick as cheaply as possible.`;
   return `${pretty} loses this trick cheaply.`;
-}
-
-function names(view) {
-  return view.names || ['You', 'West', 'North', 'East'];
 }
 
 export { rankLabel };

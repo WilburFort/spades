@@ -41,6 +41,8 @@ export function estimateTricks(hand) {
     if (r.has(14)) est += L <= 4 ? 1 : L === 5 ? 0.85 : 0.6;
     if (r.has(13)) est += L === 1 ? 0.35 : L <= 4 ? 0.7 : 0.45;
     if (r.has(12)) est += L === 1 ? 0.1 : L === 2 ? 0.25 : L <= 4 ? 0.35 : 0.2;
+    // A long suit headed by the ace and king keeps winning once the others are out of it.
+    if (L >= 6 && r.has(14) && r.has(13)) est += (L - 5) * 0.3;
   }
   // Ruffing power from shortness when holding spades.
   if (n >= 3) {
@@ -110,18 +112,28 @@ export function rookieBid(view, rng) {
   return bid;
 }
 
+/** Nil is off the table when the partner already bid nil; it needs a stronger hand when an opponent did. */
+export function nilContext(view) {
+  const me = view.seat;
+  const partnerNil = view.bids[partnerOf(me)] === NIL;
+  const oppNil = [(me + 1) % 4, (me + 3) % 4].some((s) => view.bids[s] === NIL);
+  return { partnerNil, oppNil };
+}
+
 /** Intermediate bid: protected-honour counting with a sober nil check. */
 export function solidBid(view, rng) {
   const est = estimateTricks(view.hand);
   const partnerBid = view.bids[partnerOf(view.seat)];
-  if (view.options.allowNil && looksLikeNil(view.hand)) {
+  const { partnerNil, oppNil } = nilContext(view);
+  if (view.options.allowNil && !partnerNil && looksLikeNil(view.hand) && (!oppNil || nilRisk(view.hand).expectedTricks < 0.5)) {
     // Nil is easier with a strong partner; also more attractive when behind.
     const team = view.seat % 2;
     const behind = view.scores[1 - team] - view.scores[team];
     const partnerStrong = partnerBid !== null && partnerBid >= 4;
     if (partnerStrong || behind >= 50 || rng.chance(0.65)) return NIL;
   }
-  let bid = Math.round(est - 0.15 + (rng.next() - 0.5) * 0.3);
+  // Covering a nil partner means taking the tricks they cannot: bid up a little.
+  let bid = Math.round(est - 0.15 + (partnerNil ? 0.5 : 0) + (rng.next() - 0.5) * 0.3);
   if (bid < 1) bid = 1;
   if (bid > 13) bid = 13;
   return bid;

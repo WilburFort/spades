@@ -7,11 +7,12 @@
 // which card (or which bid) does best.
 
 import { suitOf, SPADES } from '../engine/cards.js';
+import { Rng } from '../engine/rng.js';
 import { playCard, PHASE, legalPlays } from '../engine/game.js';
 import { viewFor, stateFromView } from '../engine/view.js';
 import { NIL, teamOf, scoreHand } from '../engine/scoring.js';
-import { analyze, distinctCandidates } from './analysis.js';
-import { solidPlay, legalFromView } from './play.js';
+import { analyze, distinctCandidates, beatsCurrent } from './analysis.js';
+import { solidPlay, legalFromView, partnerSafe } from './play.js';
 import { estimateTricks, nilRisk } from './bidding.js';
 
 const now = typeof performance !== 'undefined' && performance.now ? () => performance.now() : () => Date.now();
@@ -122,16 +123,47 @@ export function rollout(state, rng, policyOpts) {
   return state;
 }
 
-/** Points our team gained minus the opponents', with bags priced linearly. */
+/**
+ * Points our team gained minus the opponents'. Bags are priced linearly (they
+ * will cost about 10 each eventually) AND the actual ten-bag penalty counts when
+ * a rollout crosses it, so the bot both avoids bags in general and respects the
+ * cliff when a team sits at eight or nine.
+ */
 export function evaluate(state, myTeam) {
   const summary = state.lastHand;
   if (!summary) return 0;
   const opts = state.options;
   const bagPrice = opts.bagPenaltyAt > 0 ? opts.bagPenalty / opts.bagPenaltyAt : 0;
-  const value = (t) => t.contractPoints + t.nilPoints - t.bagsAdded * bagPrice;
+  const value = (t) => t.contractPoints + t.nilPoints + t.bagPenalty * 0.5 - t.bagsAdded * bagPrice;
   let score = value(summary.teams[myTeam]) - value(summary.teams[1 - myTeam]);
   if (state.phase === PHASE.GAME_OVER) score += state.winner === myTeam ? 400 : -400;
   return score;
+}
+
+/**
+ * Hard vetoes applied before sampling: situations where partnership etiquette
+ * is not a matter of expected value and rollout noise must not decide.
+ * Returns the restricted candidate list (never empty).
+ */
+export function applyVetoes(view, a, cands) {
+  if (a.leading || cands.length <= 1) return cands;
+  const me = a.me;
+  const partner = a.partner;
+  const myNil = view.bids[me] === NIL && a.nilLive[me];
+  const partnerNil = view.bids[partner] === NIL && a.nilLive[partner];
+  const oppNilSeat = [(me + 1) % 4, (me + 3) % 4].find((s) => view.bids[s] === NIL && a.nilLive[s]);
+  const losers = cands.filter((c) => !beatsCurrent(a, c));
+  const winners = cands.filter((c) => beatsCurrent(a, c));
+
+  // (a) Own nil: never win the trick when a losing card exists.
+  if (myNil && losers.length) return losers;
+  // (b) Partner is winning and their card is safe: never overtake or trump it.
+  if (a.partnerWinning && !partnerNil && partnerSafe(a) && losers.length) return losers;
+  // (c) Partner's nil is in danger (they are winning): always overtake if we can.
+  if (partnerNil && a.partnerWinning && winners.length) return winners;
+  // (d) Opponent's nil bidder is currently winning: let them have it.
+  if (oppNilSeat !== undefined && a.winnerSeat === oppNilSeat && losers.length) return losers;
+  return cands;
 }
 
 /**
@@ -146,7 +178,7 @@ export function monteCarloPlay(view, rng, opts = {}) {
   const budget = opts.timeBudgetMs ?? 250;
   const legal = legalFromView(view);
   const a = analyze(view);
-  const cands = distinctCandidates(a, legal);
+  const cands = applyVetoes(view, a, distinctCandidates(a, legal));
   if (cands.length === 1) return { card: cands[0], stats: [] };
 
   const myTeam = teamOf(view.seat);
@@ -156,10 +188,13 @@ export function monteCarloPlay(view, rng, opts = {}) {
   for (; n < rollouts; n++) {
     if (n >= 4 && now() - start > budget) break;
     const hands = sampleHands(view, a, rng);
+    // Common random numbers: every candidate is played out against the same imagined
+    // deal AND the same rollout randomness, so equal outcomes tie exactly.
+    const worldSeed = rng.int(0x7fffffff);
     for (const c of cands) {
       const state = stateFromView(view, hands);
       playCard(state, view.seat, c);
-      rollout(state, rng);
+      rollout(state, new Rng(worldSeed));
       sums.set(c, sums.get(c) + evaluate(state, myTeam));
     }
   }
@@ -193,10 +228,11 @@ export function monteCarloBid(view, rng, opts = {}) {
     if (n >= 6 && now() - start > budget) break;
     const hands = sampleHands(view, a, rng);
     const guessed = view.bids.map((b, s) => (b !== null ? b : Math.max(1, Math.round(estimateTricks(hands[s]) - 0.15))));
+    const worldSeed = rng.int(0x7fffffff);
     for (const cand of candidates) {
       const bids = guessed.slice();
       bids[me] = cand;
-      const st = runBiddingRollout(view, hands, bids, rng);
+      const st = runBiddingRollout(view, hands, bids, new Rng(worldSeed));
       sums.set(cand, sums.get(cand) + evaluate(st, myTeam));
       if (st.tricksWon[me] === 0) zero.set(cand, zero.get(cand) + 1);
     }

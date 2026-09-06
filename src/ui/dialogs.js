@@ -240,21 +240,40 @@ export function showLobby(root, { settings, resume, onPlay, onResume, onRules })
 
 /**
  * @param {HTMLElement} stage
- * @param {{suggest: number|null, canNil: boolean, canBlind: boolean, partnerText: string, onBid: (bid:number, blind:boolean)=>void, coachOn: boolean}} o
+ * @param {{suggest: number|null, canNil: boolean, partnerText: string, onBid: (bid:number)=>void, coachOn: boolean, check?: (bid:number)=>string|null}} o
+ *   `check` may return a warning; the panel then asks for a second tap to confirm that bid.
  */
 export function showBidPanel(stage, o) {
   const p = el('div', 'bidpanel');
   p.dataset.testid = 'bidpanel';
   p.setAttribute('role', 'dialog');
   p.setAttribute('aria-label', 'Your bid');
+  p.tabIndex = -1;
   p.innerHTML = `<h2>Your bid</h2><div class="sub">How many tricks will you win this hand?${o.partnerText ? ` <b>${o.partnerText}</b>` : ''}</div>`;
   const grid = el('div', 'bidgrid');
+  let warnEl = null;
+  const choose = (n) => {
+    const warning = o.check ? o.check(n) : null;
+    if (!warning) return o.onBid(n);
+    warnEl?.remove();
+    warnEl = el('div', 'warn');
+    warnEl.dataset.testid = 'bid-warning';
+    warnEl.setAttribute('role', 'alert');
+    const txt = el('span', '', warning);
+    const confirm = el('button', 'textbtn', n === NIL ? 'Bid Nil anyway' : `Bid ${n} anyway`);
+    confirm.type = 'button';
+    confirm.dataset.testid = 'bid-confirm';
+    confirm.addEventListener('click', () => o.onBid(n));
+    warnEl.append(txt, confirm);
+    foot.after(warnEl);
+    confirm.focus({ preventScroll: true });
+  };
   for (let n = 1; n <= 13; n++) {
     const b = el('button', 'bidbtn', String(n));
     b.type = 'button';
     b.dataset.testid = `bid-${n}`;
     if (o.coachOn && o.suggest === n) b.classList.add('suggest');
-    b.addEventListener('click', () => o.onBid(n, false));
+    b.addEventListener('click', () => choose(n));
     grid.appendChild(b);
   }
   if (o.canNil) {
@@ -263,7 +282,7 @@ export function showBidPanel(stage, o) {
     nil.dataset.testid = 'bid-nil';
     nil.title = 'Promise to win zero tricks: +100 if you do, −100 if you take one';
     if (o.coachOn && o.suggest === NIL) nil.classList.add('suggest');
-    nil.addEventListener('click', () => o.onBid(NIL, false));
+    nil.addEventListener('click', () => choose(NIL));
     grid.appendChild(nil);
   }
   p.appendChild(grid);
@@ -276,25 +295,26 @@ export function showBidPanel(stage, o) {
     if (document.querySelector('.overlay')) return; // a dialog is open on top of the panel
     if (/^[0-9]$/.test(e.key)) {
       const n = Number(e.key);
-      if (n === 0 && o.canNil) o.onBid(NIL, false);
+      if (n === 0 && o.canNil) choose(NIL);
       else if (n >= 1) {
         // Support 10-13 via a short two-key sequence: '1' then '0'..'3'.
         if (n === 1) {
-          pending = setTimeout(() => o.onBid(1, false), 350);
+          pending = setTimeout(() => choose(1), 350);
           return;
         }
         if (pending) {
           clearTimeout(pending);
           pending = null;
-          if (n <= 3) return o.onBid(10 + n, false);
+          if (n <= 3) return choose(10 + n);
         }
-        o.onBid(n, false);
+        choose(n);
       }
     }
   };
   let pending = null;
   document.addEventListener('keydown', onKey);
-  setTimeout(() => (grid.querySelector('.suggest') || grid.firstChild).focus({ preventScroll: true }), 0);
+  // Focus the suggested bid when there is one; otherwise the panel itself, so no number looks recommended.
+  setTimeout(() => (grid.querySelector('.suggest') || p).focus({ preventScroll: true }), 0);
   return {
     close: () => {
       document.removeEventListener('keydown', onKey);
@@ -306,7 +326,7 @@ export function showBidPanel(stage, o) {
 }
 
 /** Blind-nil decision before the cards are revealed. */
-export function showBlindNilPanel(stage, { deficit, onBlind, onLook }) {
+export function showBlindNilPanel(stage, { deficit, onBlind, onLook, onSkip }) {
   const p = el('div', 'bidpanel');
   p.dataset.testid = 'blindnil-panel';
   p.setAttribute('role', 'dialog');
@@ -323,6 +343,14 @@ export function showBlindNilPanel(stage, { deficit, onBlind, onLook }) {
   blind.addEventListener('click', onBlind);
   grid.append(look, blind);
   p.appendChild(grid);
+  if (onSkip) {
+    const skip = el('button', 'textbtn ghost', "Don't ask again this game");
+    skip.type = 'button';
+    skip.dataset.testid = 'blindnil-skip';
+    skip.style.cssText = 'height:32px;font-size:12.5px;color:var(--muted);margin-top:2px';
+    skip.addEventListener('click', onSkip);
+    p.appendChild(skip);
+  }
   stage.appendChild(p);
   setTimeout(() => look.focus({ preventScroll: true }), 0);
   return { close: () => p.remove() };
@@ -341,7 +369,7 @@ function cls(n) {
  * Hand summary with a count-up on the totals.
  * @returns {Promise<void>} resolves when the player continues
  */
-export function showHandSummary(root, { summary, names, options, tricks, gameOver, instant }) {
+export function showHandSummary(root, { summary, names, options, tricks, gameOver, instant, coachLine = null }) {
   return new Promise((resolve) => {
     const { ov, d, close } = overlay(root, 'wide', 'hand-summary');
     const teams = summary.teams;
@@ -379,6 +407,14 @@ export function showHandSummary(root, { summary, names, options, tricks, gameOve
           <tr class="total"><td>Score</td><td data-testid="score-after-0">${summary.scoresBefore[0]}</td><td data-testid="score-after-1">${summary.scoresBefore[1]}</td></tr>
         </tbody>
       </table>`;
+    if (coachLine) {
+      const c = el('div', 'coachline');
+      c.dataset.testid = 'summary-coach';
+      c.innerHTML = `<span class="bulb">💡</span><span>${coachLine}</span>`;
+      c.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px;padding:10px 12px;border-radius:10px;background:rgba(255,209,102,0.1);border:1px solid rgba(255,209,102,0.3);font-size:13.5px;line-height:1.35';
+      c.querySelector('.bulb').style.cssText = 'font-size:14px;line-height:1.3';
+      d.appendChild(c);
+    }
     const explain = el('p', 'muted');
     explain.style.fontSize = '13px';
     explain.innerHTML = 'Made bid: 10 points per trick bid, +1 per extra trick (a <b>bag</b>). Missed bid: −10 per trick bid. Nil: ±100 (blind ±200). Ten bags: −100.';
@@ -388,9 +424,15 @@ export function showHandSummary(root, { summary, names, options, tricks, gameOve
       const det = el('details');
       det.innerHTML = '<summary style="cursor:pointer;color:var(--muted);padding:6px 0">Review the 13 tricks</summary>';
       const grid = el('div', 'trick-review');
+      const short = (s) => (s === 0 ? 'You' : escapeHtml(names[s].replace('Prof. ', '').slice(0, 6)));
       tricks.forEach((t, i) => {
-        const row = el('div');
-        row.innerHTML = `<span class="n">${i + 1}.</span>` + t.plays.map((p) => `<span class="c ${suitOf(p.card) === HEARTS || suitOf(p.card) === DIAMONDS ? 'red' : ''}" title="${escapeHtml(names[p.seat])}">${cardToPretty(p.card)}</span>`).join('') + `<span class="w">${escapeHtml(names[t.winner])}</span>`;
+        const row = el('div', 'tr');
+        row.innerHTML =
+          `<span class="n">${i + 1}.</span>` +
+          t.plays
+            .map((p, k) => `<span class="pl${p.seat === t.winner ? ' win' : ''}"><span class="c ${suitOf(p.card) === HEARTS || suitOf(p.card) === DIAMONDS ? 'red' : ''}${k === 0 ? ' led' : ''}" title="${escapeHtml(names[p.seat])}${k === 0 ? ' (led)' : ''}">${cardToPretty(p.card)}</span><span class="who">${short(p.seat)}</span></span>`)
+            .join('') +
+          `<span class="w">${t.winner === 0 ? 'you won' : escapeHtml(names[t.winner]) + ' won'}</span>`;
         grid.appendChild(row);
       });
       det.appendChild(grid);
@@ -557,14 +599,15 @@ export function showScoreHistory(root, { history, names, scores }) {
     const { ov, d, close } = overlay(root, '', 'score-history');
     const us = `${names[0]} & ${names[2]}`;
     const them = `${names[1]} & ${names[3]}`;
+    const bidText = (h, t) => (t === 0 ? [0, 2] : [1, 3]).map((s) => (h.bids[s] === NIL ? (h.blind[s] ? 'BN' : 'Nil') : h.bids[s])).join('+');
     const rows = history
       .map(
-        (h) => `<tr><td>Hand ${h.handNumber}</td><td>${h.teams[0].bid || (h.teams[0].nils.length ? 'nil' : 0)} / ${h.teams[0].tricksTotal}</td><td class="${cls(h.teams[0].total)}">${signed(h.teams[0].total)}</td><td><b>${h.scoresAfter[0]}</b></td><td>${h.teams[1].bid || (h.teams[1].nils.length ? 'nil' : 0)} / ${h.teams[1].tricksTotal}</td><td class="${cls(h.teams[1].total)}">${signed(h.teams[1].total)}</td><td><b>${h.scoresAfter[1]}</b></td></tr>`
+        (h) => `<tr><td>Hand ${h.handNumber}</td><td>${bidText(h, 0)} / ${h.teams[0].tricksTotal}</td><td class="${cls(h.teams[0].total)}">${signed(h.teams[0].total)}</td><td><b>${h.scoresAfter[0]}</b></td><td>${bidText(h, 1)} / ${h.teams[1].tricksTotal}</td><td class="${cls(h.teams[1].total)}">${signed(h.teams[1].total)}</td><td><b>${h.scoresAfter[1]}</b></td></tr>`
       )
       .join('');
     d.innerHTML = `<h2>Score history</h2>
       <table><thead><tr><th></th><th class="us" colspan="3">${escapeHtml(us)}</th><th class="them" colspan="3">${escapeHtml(them)}</th></tr>
-      <tr><th></th><th>bid/won</th><th>hand</th><th>total</th><th>bid/won</th><th>hand</th><th>total</th></tr></thead>
+      <tr><th></th><th title="bids by seat (Nil, BN = blind nil) / tricks won">bids / won</th><th>hand</th><th>total</th><th title="bids by seat (Nil, BN = blind nil) / tricks won">bids / won</th><th>hand</th><th>total</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="7" class="muted">No hands completed yet.</td></tr>'}</tbody></table>
       <p class="muted" style="text-align:right">Current: <b style="color:var(--us)">${scores[0]}</b> — <b style="color:var(--them)">${scores[1]}</b></p>`;
     const actions = el('div', 'actions');

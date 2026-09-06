@@ -183,16 +183,31 @@ export function solidPlay(view, rng, opts = {}) {
   const spades = legal.filter(isSpade);
   const spadeWinners = winningCards(a, spades);
   if (want && spadeWinners.length && !(a.partnerWinning && partnerSafe(a))) {
+    if (a.partnerWinning) {
+      // Partner's card could be ruffed by a later opponent: only protect with a spade that opponent cannot beat.
+      const sure = spadeWinners.filter((c) => rankOf(c) > a.highestUnseen[SPADES]);
+      if (!sure.length) return discardNormal(a, legal, false);
+      return lowestOf(sure);
+    }
     return lowestOf(spadeWinners);
   }
   return discardNormal(a, legal, !want);
 }
 
-function partnerSafe(a) {
-  // Partner currently winning with a spade, or with the highest remaining card of the suit and nobody able to trump.
-  if (suitOf(a.winnerCard) === SPADES) return rankOf(a.winnerCard) > a.highestUnseen[SPADES] || a.isLast;
+/**
+ * Is the partner's currently winning card safe enough that we should not
+ * overtake or trump it? A boss card (above every unseen card of its suit) is
+ * safe unless a later opponent is known to be void in that suit and could ruff.
+ */
+export function partnerSafe(a) {
   if (a.isLast) return true;
-  return rankOf(a.winnerCard) > a.highestUnseen[a.ledSuit] && a.spadesOut === 0;
+  if (suitOf(a.winnerCard) === SPADES) return rankOf(a.winnerCard) > a.highestUnseen[SPADES];
+  if (rankOf(a.winnerCard) <= a.highestUnseen[a.ledSuit]) return false;
+  if (a.spadesOut === 0) return true;
+  for (const seat of a.seatsAfterMe) {
+    if (seat !== a.partner && a.voids[seat][a.ledSuit]) return false; // an opponent may trump it
+  }
+  return true;
 }
 
 /** Choose a discard when void: dump dangerous cards if avoiding tricks, else shorten a side suit. */
